@@ -1,6 +1,9 @@
-"""Mainnet Bitcoin address check. Accept bc1, 1, and 3. Reject everything else."""
+"""Mainnet Bitcoin address check. Accept bc1, 1, and 3 after checksum validation."""
 
 import hashlib
+from typing import Literal
+
+AddressVerdict = Literal["ok", "checksum", "prefix"]
 
 _BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 _BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
@@ -19,6 +22,22 @@ def is_btc_mainnet_address(address: str) -> bool:
     return False
 
 
+def classify_btc_mainnet_address(address: str) -> AddressVerdict:
+    """Tell a bad prefix apart from a cut-off or checksum failure.
+
+    ``checksum`` means the string looks like a mainnet address (bc1, 1, or 3)
+    but is incomplete or the checksum does not match. ``prefix`` means it does
+    not look like a mainnet Bitcoin address at all.
+    """
+
+    value = address.strip()
+    if is_btc_mainnet_address(value):
+        return "ok"
+    if _looks_like_mainnet_btc(value):
+        return "checksum"
+    return "prefix"
+
+
 def normalize_btc_mainnet_address(address: str) -> str:
     value = address.strip()
     if not is_btc_mainnet_address(value):
@@ -26,6 +45,14 @@ def normalize_btc_mainnet_address(address: str) -> str:
     if value.lower().startswith("bc1"):
         return value.lower()
     return value
+
+
+def _looks_like_mainnet_btc(value: str) -> bool:
+    if not value:
+        return False
+    if value.lower().startswith("bc1"):
+        return True
+    return value[0] in {"1", "3"}
 
 
 def _is_base58_mainnet(address: str) -> bool:

@@ -1,6 +1,7 @@
 from app.formatting import format_btc, format_rub
 from app.models import Order, OrderStatus
 from app.pricing.formula import QuoteSnapshot
+from app.wallets.btc_address import classify_btc_mainnet_address
 
 MENU_BUY = "Купить BTC"
 MENU_ORDERS = "Мои заявки"
@@ -33,13 +34,20 @@ SUPPORT_TEXT = (
 AMOUNT_PROMPT = "Введите сумму в рублях, на которую хотите получить BTC. Например: 2000"
 ADDRESS_PROMPT = "Введите BTC-адрес. Подходят адреса, которые начинаются с bc1, 1 или 3."
 AMOUNT_RETRY = "Введите сумму в рублях, например 2000."
-ADDRESS_RETRY = "Этот адрес не подходит. Нужен Bitcoin-адрес, который начинается с bc1, 1 или 3."
+ADDRESS_PREFIX_HINT = "Этот адрес не подходит. Нужен Bitcoin-адрес, который начинается с bc1, 1 или 3."
+ADDRESS_CHECKSUM_HINT = "Адрес неполный или контрольная сумма не совпадает."
 AMOUNT_TOO_SMALL = "Сумма слишком маленькая для текущего курса. Введите больше."
 QUOTE_EXPIRED = "Котировка истекла. Нажмите «Купить BTC» и запросите новую."
 CANCELLED_TEXT = "Отменено."
 MAIN_MENU_TEXT = "Главное меню"
 BLOCKED_TEXT = "Аккаунт заблокирован."
 EMPTY_ORDERS = "Заявок пока нет."
+
+
+def address_retry_text(address: str) -> str:
+    if classify_btc_mainnet_address(address) == "checksum":
+        return ADDRESS_CHECKSUM_HINT
+    return ADDRESS_PREFIX_HINT
 
 
 def format_markup_percent(bps: int) -> str:

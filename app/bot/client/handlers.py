@@ -9,7 +9,6 @@ from app.bot.client.keyboards import client_order_keyboard, confirm_keyboard, se
 from app.bot.client.states import BuyFlow
 from app.bot.client.texts import (
     ADDRESS_PROMPT,
-    ADDRESS_RETRY,
     AMOUNT_PROMPT,
     AMOUNT_RETRY,
     AMOUNT_TOO_SMALL,
@@ -22,6 +21,7 @@ from app.bot.client.texts import (
     MENU_SUPPORT,
     QUOTE_EXPIRED,
     SUPPORT_TEXT,
+    address_retry_text,
     format_orders,
     format_partner,
     format_quote,
@@ -178,7 +178,7 @@ async def buy_amount(message: Message, state: FSMContext) -> None:
 async def buy_address(message: Message, session: AsyncSession, state: FSMContext) -> None:
     address = (message.text or "").strip()
     if not is_btc_mainnet_address(address):
-        await message.answer(ADDRESS_RETRY)
+        await message.answer(address_retry_text(address))
         return
     data = await state.get_data()
     principal = data.get("principal_rub_kop")
@@ -251,7 +251,7 @@ async def buy_confirm(callback: CallbackQuery, session: AsyncSession, state: FSM
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, session, ADDRESS_RETRY)
+        await _reply(callback, session, address_retry_text(address))
         return
     except (PricingError, ValueError):
         await state.clear()
