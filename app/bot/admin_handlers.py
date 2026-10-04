@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.service import CreditUsage, NotAdmin, apply_credit_command, apply_resolve_command
 from app.bot.menus import menu_for
+from app.wallets.errors import PayoutBroadcastError
 
 router = Router(name="admin")
 
@@ -46,6 +47,9 @@ async def cmd_resolve(message: Message, command: CommandObject, session: AsyncSe
             args=command.args or "",
         )
         await session.commit()
+    except PayoutBroadcastError as exc:
+        await message.answer(str(exc))
+        return
     except NotAdmin:
         await session.rollback()
         await message.answer("Команда доступна только администратору.")

@@ -39,6 +39,53 @@ def health_host() -> str:
     return os.environ.get("HEALTH_HOST", "0.0.0.0")
 
 
+def wallet_backend() -> str:
+    raw = os.environ.get("WALLET_BACKEND", "fake").strip().lower() or "fake"
+    if raw not in {"fake", "electrum"}:
+        _die("WALLET_BACKEND must be fake or electrum.")
+    return raw
+
+
+def bitcoin_network() -> str:
+    return os.environ.get("BITCOIN_NETWORK", "testnet").strip().lower() or "testnet"
+
+
+def wallet_min_confirmations() -> int:
+    raw = os.environ.get("WALLET_MIN_CONFIRMATIONS", "1").strip() or "1"
+    try:
+        value = int(raw)
+    except ValueError:
+        _die("WALLET_MIN_CONFIRMATIONS must be an integer >= 1.")
+    if value < 1:
+        _die("WALLET_MIN_CONFIRMATIONS must be an integer >= 1. Unconfirmed deposits are not credited.")
+    return value
+
+
+def electrum_rpc_host() -> str:
+    return os.environ.get("ELECTRUM_RPC_HOST", "").strip()
+
+
+def electrum_rpc_port() -> int:
+    raw = os.environ.get("ELECTRUM_RPC_PORT", "").strip()
+    if not raw:
+        _die("ELECTRUM_RPC_PORT is required when WALLET_BACKEND=electrum.")
+    try:
+        port = int(raw)
+    except ValueError:
+        _die("ELECTRUM_RPC_PORT must be an integer.")
+    if not 1 <= port <= 65535:
+        _die("ELECTRUM_RPC_PORT must be between 1 and 65535.")
+    return port
+
+
+def electrum_rpc_user() -> str:
+    return os.environ.get("ELECTRUM_RPC_USER", "").strip()
+
+
+def electrum_rpc_password() -> str:
+    return os.environ.get("ELECTRUM_RPC_PASSWORD", "")
+
+
 def health_port() -> int:
     raw = os.environ.get("HEALTH_PORT", "8000")
     try:

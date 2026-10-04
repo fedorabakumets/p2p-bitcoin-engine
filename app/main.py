@@ -4,7 +4,7 @@ import asyncio
 import logging
 import sys
 
-from app.config import btc_rub_rate, health_host, health_port, redis_url
+from app.config import btc_rub_rate, health_host, health_port, redis_url, wallet_backend
 
 MISSING_TOKEN = (
     "BOT_TOKEN is not set. "
@@ -127,8 +127,11 @@ async def run_bot(token: str) -> None:
         health_task = asyncio.create_task(health._serve())
         from app.maintenance import maintenance_loop
 
+        from app.wallets.factory import assert_electrum_ready
+
+        await assert_electrum_ready()
         maintenance_task = asyncio.create_task(maintenance_loop(sessionmaker, bot))
-        log.info("bot started as @%s", me.username)
+        log.info("bot started as @%s wallet=%s", me.username, wallet_backend())
         await dispatcher.start_polling(bot)
     finally:
         if maintenance_task is not None:

@@ -14,13 +14,16 @@ MENU_SBP = "Реквизиты СБП"
 TRADER_MENU = (MENU_BALANCE, MENU_ONLINE, MENU_ACTIVE, MENU_STATS, MENU_WITHDRAW, MENU_TIER, MENU_SBP)
 
 
-def format_balance(balances: TraderBalances) -> str:
-    return (
+def format_balance(balances: TraderBalances, deposit_address: str | None = None) -> str:
+    text = (
         "Баланс\n"
         f"Доступно: {format_btc(balances.available_sats)} BTC\n"
         f"Заморожено: {format_btc(balances.locked_sats)} BTC\n"
         f"Всего: {format_btc(balances.total_sats)} BTC"
     )
+    if deposit_address:
+        text += f"\nАдрес пополнения testnet: {deposit_address}"
+    return text
 
 
 def format_stats(stats: TraderStats) -> str:

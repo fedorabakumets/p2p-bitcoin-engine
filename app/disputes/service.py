@@ -2,8 +2,12 @@
 
 A screenshot is stored as a Telegram file id and never confirms payment.
 Unlock cancels the order and returns trader_locked to trader_available.
-Release uses the same satoshi split as trader confirmation, then COMPLETED.
-payout_wallet_tx_id stays null. Rubles are settled off the platform.
+Release uses the same satoshi split as trader confirmation. On the fake
+wallet that completes with payout_wallet_tx_id null. On Electrum, or when a
+wallet adapter is passed in, the client payout is broadcast first and the
+order becomes COMPLETED only after a txid. A failed broadcast leaves the
+order RELEASING, the dispute open, and the escrow locked. Rubles are settled
+off the platform.
 """
 
 import uuid
@@ -18,6 +22,7 @@ from app.escrow.service import get_escrow
 from app.models import Dispute, DisputeEvidence, Order, OrderStatus, utcnow
 from app.orders.payment import NotOrderTrader, release_and_complete, return_lock_to_trader
 from app.orders.service import IllegalOrderTransition, transition
+from app.wallets.adapter import WalletAdapter
 
 _OPENABLE = {
     OrderStatus.WAITING_PAYMENT.value,
@@ -130,6 +135,7 @@ async def resolve_dispute(
     order_id: uuid.UUID,
     action: str,
     note: str | None = None,
+    wallet: WalletAdapter | None = None,
 ) -> Order:
     if action not in {"release", "unlock"}:
         raise ValueError("resolution must be release or unlock")
@@ -146,7 +152,13 @@ async def resolve_dispute(
     if action == "release":
         if str(order.status) != OrderStatus.DISPUTED.value:
             raise IllegalOrderTransition(str(order.status), OrderStatus.RELEASING.value)
-        await release_and_complete(session, order, actor_type="admin", actor_user_id=admin_user_id)
+        await release_and_complete(
+            session,
+            order,
+            actor_type="admin",
+            actor_user_id=admin_user_id,
+            wallet=wallet,
+        )
     else:
         if str(order.status) != OrderStatus.DISPUTED.value:
             raise IllegalOrderTransition(str(order.status), OrderStatus.CANCELLED.value)

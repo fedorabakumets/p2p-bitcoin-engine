@@ -33,7 +33,13 @@ def trader_paid_text(order: Order) -> str:
     )
 
 
-def client_completed_text(order: Order) -> str:
+def client_completed_text(order: Order, *, chain_txid: str | None = None) -> str:
+    if chain_txid:
+        return (
+            f"Заявка №{order.public_no} завершена.\n"
+            f"Выплата {format_btc(order.client_btc_sats)} BTC отправлена в testnet.\n"
+            f"txid: {chain_txid}"
+        )
     return (
         f"Заявка №{order.public_no} завершена.\n"
         f"Выплата {format_btc(order.client_btc_sats)} BTC зафиксирована в учёте.\n"

@@ -12,6 +12,8 @@ from app.notifications.messages import client_cancelled_text, client_completed_t
 from app.notifications.service import enqueue
 from app.orders.service import IllegalOrderTransition, transition
 from app.traders.service import add_daily_volume
+from app.wallets.adapter import WalletAdapter
+from app.wallets.payout import broadcast_client_payout, payout_adapter
 
 
 class CancelNotAllowed(Exception):
@@ -108,7 +110,13 @@ async def cancel_by_client(session: AsyncSession, *, order_id: uuid.UUID, client
     return order
 
 
-async def confirm_receipt(session: AsyncSession, *, order_id: uuid.UUID, trader_id: uuid.UUID) -> Order:
+async def confirm_receipt(
+    session: AsyncSession,
+    *,
+    order_id: uuid.UUID,
+    trader_id: uuid.UUID,
+    wallet: WalletAdapter | None = None,
+) -> Order:
     order = await _lock_order(session, order_id)
     if order.trader_id != trader_id:
         raise NotOrderTrader()
@@ -128,8 +136,13 @@ async def confirm_receipt(session: AsyncSession, *, order_id: uuid.UUID, trader_
         actor_user_id=trader_id,
         idempotency_key=f"order:{order.id}:status:PAYMENT_CONFIRMED",
     )
-    await release_and_complete(session, order, actor_type="trader", actor_user_id=trader_id)
-    return order
+    return await release_and_complete(
+        session,
+        order,
+        actor_type="trader",
+        actor_user_id=trader_id,
+        wallet=wallet,
+    )
 
 
 async def return_lock_to_trader(session: AsyncSession, order: Order) -> None:
@@ -149,7 +162,22 @@ async def release_and_complete(
     actor_type: str,
     actor_user_id: uuid.UUID | None,
     idempotency_suffix: str = "",
+    wallet: WalletAdapter | None = None,
 ) -> Order:
+    """Release escrow and complete the order in this same database transaction.
+
+    WALLET_BACKEND=fake does not call the network. payout_wallet_tx_id stays
+    null and the order still becomes COMPLETED.
+
+    An Electrum backend, or an adapter passed by a test, broadcasts
+    client_btc_sats first. COMPLETED is set only after that call returns a
+    txid, and the ledger release is in this same transaction. If broadcast
+    fails, PayoutBroadcastError is raised while the order is already
+    RELEASING and the escrow is still locked. The caller commits that state.
+    Locked sats are not unlocked and not released, so they cannot be lost or
+    paid twice by a second click.
+    """
+
     suffix = idempotency_suffix
     await transition(
         session,
@@ -159,7 +187,14 @@ async def release_and_complete(
         actor_user_id=actor_user_id,
         idempotency_key=f"order:{order.id}:status:RELEASING{suffix}",
     )
-    await release_escrow(session, order)
+    adapter = payout_adapter(wallet)
+    wallet_row = None
+    chain_txid = None
+    if adapter is not None:
+        wallet_row, chain_txid = await broadcast_client_payout(session, order, adapter)
+    escrow = await release_escrow(session, order)
+    if wallet_row is not None:
+        wallet_row.ledger_group_id = escrow.release_group_id
     await transition(
         session,
         order,
@@ -169,13 +204,13 @@ async def release_and_complete(
         idempotency_key=f"order:{order.id}:status:COMPLETED{suffix}",
     )
     order.completed_at = utcnow()
-    order.payout_wallet_tx_id = None
+    order.payout_wallet_tx_id = None if wallet_row is None else wallet_row.id
     await enqueue(
         session,
         user_id=order.client_id,
         order_id=order.id,
         kind="client_completed",
-        text=client_completed_text(order),
+        text=client_completed_text(order, chain_txid=chain_txid),
     )
     await session.flush()
     await session.refresh(order)

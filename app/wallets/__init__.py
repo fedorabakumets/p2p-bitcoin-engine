@@ -1,4 +1,5 @@
-"""Wallet package. This prototype only checks mainnet address shape.
+"""Wallet adapters.
 
-Electrum, deposits, and payouts are not implemented.
+The default backend is fake: admin credit still adds test balance, and payouts
+do not call the network. Electrum is optional and testnet-only.
 """

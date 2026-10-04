@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://p2p:p2p@127.0.0.1:5432/p2p_test"
 os.environ["BTC_RUB_RATE"] = "6000000"
+os.environ["WALLET_BACKEND"] = "fake"
 os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:6379/0")
 
 import psycopg
@@ -56,6 +57,8 @@ async def session() -> AsyncIterator[AsyncSession]:
                         ledger_balances,
                         ledger_accounts,
                         order_events,
+                        wallet_transactions,
+                        wallet_addresses,
                         trader_daily_volume,
                         trader_payment_methods,
                         orders,

@@ -23,9 +23,13 @@ from app.bot.trader.texts import (
     format_tier,
     format_trader_order,
 )
+from app.config import wallet_backend
 from app.disputes.service import EvidenceInput, add_dispute_evidence, open_dispute
 from app.ledger.service import trader_balances
 from app.orders.payment import ConfirmTooEarly, NotOrderTrader, confirm_receipt
+from app.wallets.deposits import ensure_deposit_address
+from app.wallets.errors import PayoutBroadcastError, WalletError
+from app.wallets.factory import get_wallet_adapter
 from app.orders.service import IllegalOrderTransition
 from app.routing.service import AcceptExpired, NotEligible, OrderAlreadyTaken, accept_order
 from app.traders.service import (
@@ -61,7 +65,17 @@ async def menu_balance(message: Message, session: AsyncSession, state: FSMContex
         await message.answer("Раздел доступен трейдеру.")
         return
     balances = await trader_balances(session, user.id)
-    await message.answer(format_balance(balances), reply_markup=await menu_for(session, message.from_user.id))
+    deposit_address = None
+    address_note = None
+    if wallet_backend() == "electrum" and str(trader.status) == "active":
+        try:
+            deposit_address = await ensure_deposit_address(session, user.id, get_wallet_adapter())
+        except WalletError:
+            address_note = "Адрес пополнения testnet сейчас недоступен."
+    text = format_balance(balances, deposit_address)
+    if address_note:
+        text = f"{text}\n{address_note}"
+    await message.answer(text, reply_markup=await menu_for(session, message.from_user.id))
 
 
 @router.message(F.text == MENU_ONLINE)
@@ -278,6 +292,11 @@ async def on_confirm(callback: CallbackQuery, session: AsyncSession) -> None:
         order_id = order_id_from_callback(callback.data, "confirm:")
         order = await confirm_receipt(session, order_id=order_id, trader_id=user.id)
         await session.commit()
+    except PayoutBroadcastError as exc:
+        await callback.answer("Выплата не отправлена", show_alert=True)
+        if callback.message is not None:
+            await callback.message.answer(str(exc))
+        return
     except ConfirmTooEarly as exc:
         await session.rollback()
         await callback.answer(str(exc), show_alert=True)
@@ -292,9 +311,11 @@ async def on_confirm(callback: CallbackQuery, session: AsyncSession) -> None:
         return
     await callback.answer("Оплата подтверждена")
     if callback.message is not None:
-        await callback.message.answer(
-            f"Заявка №{order.public_no} завершена. Отправка в сеть в этой версии не выполняется."
-        )
+        if order.payout_wallet_tx_id is None:
+            done = f"Заявка №{order.public_no} завершена. Отправка в сеть в этой версии не выполняется."
+        else:
+            done = f"Заявка №{order.public_no} завершена. Выплата отправлена в testnet."
+        await callback.message.answer(done)
 
 
 @router.callback_query(F.data.startswith("dispute:"))

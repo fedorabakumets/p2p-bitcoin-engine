@@ -94,6 +94,12 @@ DISPUTE_STATUS = PgEnumValue("dispute_status", ("open", "resolved"))
 DISPUTE_RESOLUTION = PgEnumValue("dispute_resolution", ("release", "unlock"))
 EVIDENCE_KIND = PgEnumValue("evidence_kind", ("screenshot", "text"))
 NOTIFICATION_STATUS = PgEnumValue("notification_status", ("pending", "sent", "failed"))
+ADDRESS_PURPOSE = PgEnumValue("address_purpose", ("deposit", "hot"))
+CHAIN_DIRECTION = PgEnumValue("chain_direction", ("in", "out"))
+CHAIN_TX_STATUS = PgEnumValue(
+    "chain_tx_status",
+    ("seen", "confirmed", "credited", "broadcast", "confirmed_out", "failed"),
+)
 
 
 class Base(DeclarativeBase):
@@ -339,4 +345,35 @@ class AuditLog(Base):
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     before_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     after_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class WalletAddress(Base):
+    __tablename__ = "wallet_addresses"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trader_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("traders.user_id"))
+    purpose: Mapped[str] = mapped_column(ADDRESS_PURPOSE, nullable=False)
+    address: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    derivation_index: Mapped[int | None] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    txid: Mapped[str] = mapped_column(Text, nullable=False)
+    vout: Mapped[int] = mapped_column(Integer, nullable=False)
+    direction: Mapped[str] = mapped_column(CHAIN_DIRECTION, nullable=False)
+    address_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wallet_addresses.id"), nullable=False
+    )
+    amount_sats: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    confirmations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(CHAIN_TX_STATUS, nullable=False)
+    order_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orders.id"))
+    ledger_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), unique=True)
+    raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
