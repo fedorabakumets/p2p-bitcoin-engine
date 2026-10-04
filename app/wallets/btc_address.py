@@ -1,4 +1,4 @@
-"""Mainnet Bitcoin address check. Accept bc1, 1, and 3 after checksum validation."""
+"""Bitcoin address check. Mainnet accepts bc1, 1, and 3. Testnet accepts tb1, m, n, and 2."""
 
 import hashlib
 from typing import Literal
@@ -9,62 +9,96 @@ _BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 _BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 _BECH32_CONST = 1
 _BECH32M_CONST = 0x2BC830A3
+_MAINNET_VERSIONS = {"1": 0x00, "3": 0x05}
+_TESTNET_VERSIONS = {"m": 0x6F, "n": 0x6F, "2": 0xC4}
 
 
 def is_btc_mainnet_address(address: str) -> bool:
-    value = address.strip()
-    if not value or any(char.isspace() for char in value):
-        return False
-    if value.lower().startswith("bc1"):
-        return _is_bech32_mainnet(value)
-    if value[0] in {"1", "3"}:
-        return _is_base58_mainnet(value)
+    return _is_network_address(address, hrp="bc", versions=_MAINNET_VERSIONS)
+
+
+def is_btc_testnet_address(address: str) -> bool:
+    return _is_network_address(address, hrp="tb", versions=_TESTNET_VERSIONS)
+
+
+def is_btc_address_for_network(address: str, network: str) -> bool:
+    kind = network.strip().lower()
+    if kind == "mainnet":
+        return is_btc_mainnet_address(address)
+    if kind == "testnet":
+        return is_btc_testnet_address(address)
     return False
 
 
 def classify_btc_mainnet_address(address: str) -> AddressVerdict:
+    return classify_btc_address(address, "mainnet")
+
+
+def classify_btc_address(address: str, network: str) -> AddressVerdict:
     """Tell a bad prefix apart from a cut-off or checksum failure.
 
-    ``checksum`` means the string looks like a mainnet address (bc1, 1, or 3)
-    but is incomplete or the checksum does not match. ``prefix`` means it does
-    not look like a mainnet Bitcoin address at all.
+    ``checksum`` means the string looks like an address for this network but is
+    incomplete or the checksum does not match. ``prefix`` means it does not
+    look like an address for this network at all.
     """
 
     value = address.strip()
-    if is_btc_mainnet_address(value):
+    if is_btc_address_for_network(value, network):
         return "ok"
-    if _looks_like_mainnet_btc(value):
+    if _looks_like_network_btc(value, network):
         return "checksum"
     return "prefix"
 
 
 def normalize_btc_mainnet_address(address: str) -> str:
+    return normalize_btc_address(address, "mainnet")
+
+
+def normalize_btc_address(address: str, network: str) -> str:
     value = address.strip()
-    if not is_btc_mainnet_address(value):
+    if not is_btc_address_for_network(value, network):
         raise ValueError("invalid btc address")
-    if value.lower().startswith("bc1"):
+    if value.lower().startswith(("bc1", "tb1")):
         return value.lower()
     return value
 
 
-def _looks_like_mainnet_btc(value: str) -> bool:
+def _is_network_address(address: str, *, hrp: str, versions: dict[str, int]) -> bool:
+    value = address.strip()
+    if not value or any(char.isspace() for char in value):
+        return False
+    if value.lower().startswith(f"{hrp}1"):
+        return _is_bech32_address(value, hrp)
+    if value[0] in versions:
+        return _is_base58_address(value, versions)
+    return False
+
+
+def _looks_like_network_btc(value: str, network: str) -> bool:
+    kind = network.strip().lower()
     if not value:
         return False
-    if value.lower().startswith("bc1"):
-        return True
-    return value[0] in {"1", "3"}
+    if kind == "mainnet":
+        if value.lower().startswith("bc1"):
+            return True
+        return value[0] in _MAINNET_VERSIONS
+    if kind == "testnet":
+        if value.lower().startswith("tb1"):
+            return True
+        return value[0] in _TESTNET_VERSIONS
+    return False
 
 
-def _is_base58_mainnet(address: str) -> bool:
+def _is_base58_address(address: str, versions: dict[str, int]) -> bool:
     if not 26 <= len(address) <= 35:
+        return False
+    expected = versions.get(address[0])
+    if expected is None:
         return False
     raw = _b58decode(address)
     if raw is None or len(raw) != 25:
         return False
-    version = raw[0]
-    if address[0] == "1" and version != 0x00:
-        return False
-    if address[0] == "3" and version != 0x05:
+    if raw[0] != expected:
         return False
     payload, checksum = raw[:-4], raw[-4:]
     digest = hashlib.sha256(hashlib.sha256(payload).digest()).digest()
@@ -91,17 +125,18 @@ def _b58decode(text: str) -> bytes | None:
     return b"\x00" * pad + decoded
 
 
-def _is_bech32_mainnet(address: str) -> bool:
+def _is_bech32_address(address: str, hrp: str) -> bool:
     if any(char.islower() for char in address) and any(char.isupper() for char in address):
         return False
     address = address.lower()
-    if not address.startswith("bc1") or len(address) > 90:
+    prefix = f"{hrp}1"
+    if not address.startswith(prefix) or len(address) > 90:
         return False
     separator = address.rfind("1")
     if separator < 1 or separator + 7 > len(address):
         return False
-    hrp, data_part = address[:separator], address[separator + 1 :]
-    if hrp != "bc":
+    parsed_hrp, data_part = address[:separator], address[separator + 1 :]
+    if parsed_hrp != hrp:
         return False
     data: list[int] = []
     for char in data_part:
@@ -109,7 +144,7 @@ def _is_bech32_mainnet(address: str) -> bool:
         if index < 0:
             return False
         data.append(index)
-    spec = _verify_checksum(hrp, data)
+    spec = _verify_checksum(parsed_hrp, data)
     if spec is None or not data:
         return False
     version = data[0]

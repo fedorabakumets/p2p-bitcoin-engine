@@ -19,6 +19,7 @@ from app.pricing.formula import build_quote
 from app.users.service import register_from_start
 
 ADDRESS = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+TESTNET_ADDRESS = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
 
 
 def _snapshot(**overrides):
@@ -180,3 +181,22 @@ async def test_expired_and_inconsistent_snapshots_are_not_stored(session: AsyncS
 
     with pytest.raises(InvalidBtcAddress):
         await persist_created_order(session, user_id=user.id, snapshot=fresh, btc_address="hello")
+
+
+async def test_testnet_payout_address_is_accepted_only_on_testnet(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = await _user(session, 505)
+    fresh = _snapshot()
+    monkeypatch.setenv("BITCOIN_NETWORK", "mainnet")
+    with pytest.raises(InvalidBtcAddress):
+        await persist_created_order(
+            session, user_id=user.id, snapshot=fresh, btc_address=TESTNET_ADDRESS
+        )
+    monkeypatch.setenv("BITCOIN_NETWORK", "testnet")
+    with pytest.raises(InvalidBtcAddress):
+        await persist_created_order(session, user_id=user.id, snapshot=fresh, btc_address=ADDRESS)
+    order = await persist_created_order(
+        session, user_id=user.id, snapshot=fresh, btc_address=TESTNET_ADDRESS.upper()
+    )
+    assert order.btc_address == TESTNET_ADDRESS

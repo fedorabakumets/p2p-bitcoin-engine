@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Order, OrderEvent, OrderStatus, Quote, User, utcnow
 from app.orders.transitions import can_transition
 from app.pricing.formula import QuoteSnapshot, snapshot_matches_formula
+from app.config import bitcoin_network
 from app.users.service import UserBlocked
-from app.wallets.btc_address import is_btc_mainnet_address, normalize_btc_mainnet_address
+from app.wallets.btc_address import is_btc_address_for_network, normalize_btc_address
 
 
 class IllegalOrderTransition(Exception):
@@ -39,7 +40,8 @@ async def persist_created_order(
         raise ValueError("quote snapshot does not match the pricing formula")
     if snapshot.expires_at <= datetime.now(timezone.utc):
         raise QuoteExpired()
-    if not is_btc_mainnet_address(btc_address):
+    network = bitcoin_network()
+    if not is_btc_address_for_network(btc_address, network):
         raise InvalidBtcAddress()
 
     user = await session.get(User, user_id)
@@ -48,7 +50,7 @@ async def persist_created_order(
     if str(user.status) != "active":
         raise UserBlocked()
 
-    address = normalize_btc_mainnet_address(btc_address)
+    address = normalize_btc_address(btc_address, network)
     quote = Quote(
         user_id=user.id,
         principal_rub_kop=snapshot.principal_rub_kop,

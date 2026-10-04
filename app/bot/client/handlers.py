@@ -8,7 +8,6 @@ from app.bot.client.amount import parse_rub_to_kop
 from app.bot.client.keyboards import client_order_keyboard, confirm_keyboard, searching_keyboard
 from app.bot.client.states import BuyFlow
 from app.bot.client.texts import (
-    ADDRESS_PROMPT,
     AMOUNT_PROMPT,
     AMOUNT_RETRY,
     AMOUNT_TOO_SMALL,
@@ -21,6 +20,7 @@ from app.bot.client.texts import (
     MENU_SUPPORT,
     QUOTE_EXPIRED,
     SUPPORT_TEXT,
+    address_prompt,
     address_retry_text,
     format_orders,
     format_partner,
@@ -29,6 +29,7 @@ from app.bot.client.texts import (
 )
 from app.bot.menus import menu_for
 from app.bot.runtime import get_bot_username
+from app.config import bitcoin_network
 from app.models import TraderPaymentMethod
 from app.notifications.messages import client_payment_text
 from app.orders.service import InvalidBtcAddress, QuoteExpired, list_client_orders, open_searching_order
@@ -37,7 +38,7 @@ from app.pricing.rates import EnvRateSource
 from app.pricing.service import PricingService
 from app.referrals.service import partner_summary
 from app.users.service import UserBlocked, get_user_by_telegram_id, register_from_start
-from app.wallets.btc_address import is_btc_mainnet_address
+from app.wallets.btc_address import is_btc_address_for_network
 
 router = Router(name="client")
 
@@ -171,14 +172,15 @@ async def buy_amount(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(principal_rub_kop=kopecks)
     await state.set_state(BuyFlow.address)
-    await message.answer(ADDRESS_PROMPT)
+    await message.answer(address_prompt(bitcoin_network()))
 
 
 @router.message(BuyFlow.address)
 async def buy_address(message: Message, session: AsyncSession, state: FSMContext) -> None:
     address = (message.text or "").strip()
-    if not is_btc_mainnet_address(address):
-        await message.answer(address_retry_text(address))
+    network = bitcoin_network()
+    if not is_btc_address_for_network(address, network):
+        await message.answer(address_retry_text(address, network))
         return
     data = await state.get_data()
     principal = data.get("principal_rub_kop")
@@ -251,7 +253,7 @@ async def buy_confirm(callback: CallbackQuery, session: AsyncSession, state: FSM
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, session, address_retry_text(address))
+        await _reply(callback, session, address_retry_text(address, bitcoin_network()))
         return
     except (PricingError, ValueError):
         await state.clear()

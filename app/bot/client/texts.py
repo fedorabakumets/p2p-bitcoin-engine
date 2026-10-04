@@ -1,7 +1,7 @@
 from app.formatting import format_btc, format_rub
 from app.models import Order, OrderStatus
 from app.pricing.formula import QuoteSnapshot
-from app.wallets.btc_address import classify_btc_mainnet_address
+from app.wallets.btc_address import classify_btc_address
 
 MENU_BUY = "Купить BTC"
 MENU_ORDERS = "Мои заявки"
@@ -33,8 +33,14 @@ SUPPORT_TEXT = (
 
 AMOUNT_PROMPT = "Введите сумму в рублях, на которую хотите получить BTC. Например: 2000"
 ADDRESS_PROMPT = "Введите BTC-адрес. Подходят адреса, которые начинаются с bc1, 1 или 3."
+ADDRESS_PROMPT_TESTNET = (
+    "Введите BTC-адрес testnet. Подходят адреса, которые начинаются с tb1, m, n или 2."
+)
 AMOUNT_RETRY = "Введите сумму в рублях, например 2000."
 ADDRESS_PREFIX_HINT = "Этот адрес не подходит. Нужен Bitcoin-адрес, который начинается с bc1, 1 или 3."
+ADDRESS_PREFIX_HINT_TESTNET = (
+    "Этот адрес не подходит. Нужен testnet-адрес, который начинается с tb1, m, n или 2."
+)
 ADDRESS_CHECKSUM_HINT = "Адрес неполный или контрольная сумма не совпадает."
 AMOUNT_TOO_SMALL = "Сумма слишком маленькая для текущего курса. Введите больше."
 QUOTE_EXPIRED = "Котировка истекла. Нажмите «Купить BTC» и запросите новую."
@@ -44,9 +50,17 @@ BLOCKED_TEXT = "Аккаунт заблокирован."
 EMPTY_ORDERS = "Заявок пока нет."
 
 
-def address_retry_text(address: str) -> str:
-    if classify_btc_mainnet_address(address) == "checksum":
+def address_prompt(network: str = "mainnet") -> str:
+    if network.strip().lower() == "testnet":
+        return ADDRESS_PROMPT_TESTNET
+    return ADDRESS_PROMPT
+
+
+def address_retry_text(address: str, network: str = "mainnet") -> str:
+    if classify_btc_address(address, network) == "checksum":
         return ADDRESS_CHECKSUM_HINT
+    if network.strip().lower() == "testnet":
+        return ADDRESS_PREFIX_HINT_TESTNET
     return ADDRESS_PREFIX_HINT
 
 
