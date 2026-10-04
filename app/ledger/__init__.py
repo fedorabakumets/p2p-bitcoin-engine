@@ -1,1 +1,1 @@
-"""BTC satoshi ledger. Movements are not posted in this prototype."""
+"""BTC satoshi ledger. Balances change only through app.ledger.service."""

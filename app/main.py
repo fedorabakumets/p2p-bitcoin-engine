@@ -76,6 +76,7 @@ async def run_bot(token: str) -> None:
     storage: RedisStorage | None = None
     health: uvicorn.Server | None = None
     health_task: asyncio.Task[None] | None = None
+    maintenance_task: asyncio.Task[None] | None = None
     try:
         try:
             bot = Bot(token=token)
@@ -124,9 +125,18 @@ async def run_bot(token: str) -> None:
         )
         # _serve does not install signal handlers, so polling keeps SIGINT/SIGTERM.
         health_task = asyncio.create_task(health._serve())
+        from app.maintenance import maintenance_loop
+
+        maintenance_task = asyncio.create_task(maintenance_loop(sessionmaker, bot))
         log.info("bot started as @%s", me.username)
         await dispatcher.start_polling(bot)
     finally:
+        if maintenance_task is not None:
+            maintenance_task.cancel()
+            try:
+                await maintenance_task
+            except asyncio.CancelledError:
+                pass
         if health is not None and health_task is not None:
             health.should_exit = True
             await health_task

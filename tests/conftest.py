@@ -45,9 +45,23 @@ async def session() -> AsyncIterator[AsyncSession]:
                 text(
                     """
                     TRUNCATE TABLE
+                        idempotency_keys,
+                        dispute_evidence,
+                        disputes,
+                        notifications,
+                        audit_log,
+                        referral_rewards,
+                        escrow_locks,
+                        ledger_entries,
+                        ledger_balances,
+                        ledger_accounts,
                         order_events,
+                        trader_daily_volume,
+                        trader_payment_methods,
                         orders,
                         quotes,
+                        traders,
+                        admin_users,
                         users
                     RESTART IDENTITY CASCADE
                     """

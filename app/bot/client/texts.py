@@ -1,3 +1,4 @@
+from app.formatting import format_btc, format_rub
 from app.models import Order, OrderStatus
 from app.pricing.formula import QuoteSnapshot
 
@@ -41,14 +42,6 @@ BLOCKED_TEXT = "Аккаунт заблокирован."
 EMPTY_ORDERS = "Заявок пока нет."
 
 
-def format_rub(kopecks: int) -> str:
-    sign = "-" if kopecks < 0 else ""
-    rubles, frac = divmod(abs(kopecks), 100)
-    if frac:
-        return f"{sign}{rubles},{frac:02d}"
-    return f"{sign}{rubles}"
-
-
 def format_markup_percent(bps: int) -> str:
     whole, frac = divmod(bps, 100)
     if frac == 0:
@@ -90,9 +83,30 @@ def format_orders(orders: list[Order]) -> str:
     return "\n\n".join(blocks)
 
 
-def format_partner(*, code: str, bot_username: str | None, invited: int) -> str:
+def format_partner(
+    *,
+    code: str,
+    bot_username: str | None,
+    invited: int,
+    completed_invitees: int,
+    turnover_rub_kop: int,
+    earned_sats: int,
+    available_sats: int,
+    snapshot_rub_kop: int,
+    estimate_rub_kop: int,
+) -> str:
     if bot_username:
         link = f"t.me/{bot_username}?start=ref_{code}"
     else:
         link = code
-    return f"Партнёрская программа\n\nВаша ссылка: {link}\nПриглашено: {invited}"
+    return (
+        "Партнёрская программа\n\n"
+        f"Ваша ссылка: {link}\n"
+        f"Приглашено: {invited}\n"
+        f"С завершённой заявкой: {completed_invitees}\n"
+        f"Оборот приглашённых: {format_rub(turnover_rub_kop)} ₽\n"
+        f"Заработано: {format_btc(earned_sats)} BTC\n"
+        f"Доступно: {format_btc(available_sats)} BTC\n"
+        f"По курсу заявок: {format_rub(snapshot_rub_kop)} ₽\n"
+        f"Оценка по текущему курсу: ≈ {format_rub(estimate_rub_kop)} ₽"
+    )

@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message, User as TelegramUser
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.client.amount import parse_rub_to_kop
-from app.bot.client.keyboards import confirm_keyboard, main_menu
+from app.bot.client.keyboards import client_order_keyboard, confirm_keyboard, searching_keyboard
 from app.bot.client.states import BuyFlow
 from app.bot.client.texts import (
     ADDRESS_PROMPT,
@@ -27,13 +27,16 @@ from app.bot.client.texts import (
     format_quote,
     format_searching,
 )
+from app.bot.menus import menu_for
 from app.bot.runtime import get_bot_username
-from app.orders.service import InvalidBtcAddress, QuoteExpired, open_searching_order
-from app.orders.service import list_client_orders
+from app.models import TraderPaymentMethod
+from app.notifications.messages import client_payment_text
+from app.orders.service import InvalidBtcAddress, QuoteExpired, list_client_orders, open_searching_order
 from app.pricing.formula import PricingError, QuoteSnapshot
 from app.pricing.rates import EnvRateSource
 from app.pricing.service import PricingService
-from app.users.service import UserBlocked, get_user_by_telegram_id, invited_count, register_from_start
+from app.referrals.service import partner_summary
+from app.users.service import UserBlocked, get_user_by_telegram_id, register_from_start
 from app.wallets.btc_address import is_btc_mainnet_address
 
 router = Router(name="client")
@@ -88,7 +91,7 @@ async def cmd_start(
     if _blocked(user):
         await message.answer(BLOCKED_TEXT)
         return
-    await message.answer(MAIN_MENU_TEXT, reply_markup=main_menu())
+    await message.answer(MAIN_MENU_TEXT, reply_markup=await menu_for(session, message.from_user.id))
 
 
 @router.message(F.text == MENU_BUY)
@@ -110,7 +113,18 @@ async def menu_orders(message: Message, session: AsyncSession, state: FSMContext
     if user is None:
         return
     orders = await list_client_orders(session, user.id)
-    await message.answer(format_orders(orders), reply_markup=main_menu())
+    markup = await menu_for(session, message.from_user.id)
+    await message.answer(format_orders(orders), reply_markup=markup)
+    for order in orders:
+        keyboard = client_order_keyboard(order)
+        if keyboard is None:
+            continue
+        details = f"Заявка №{order.public_no}"
+        if order.payment_method_id is not None and str(order.status) == "WAITING_PAYMENT":
+            method = await session.get(TraderPaymentMethod, order.payment_method_id)
+            if method is not None:
+                details = client_payment_text(order, method)
+        await message.answer(details, reply_markup=keyboard)
 
 
 @router.message(F.text == MENU_PARTNER)
@@ -119,17 +133,28 @@ async def menu_partner(message: Message, session: AsyncSession, state: FSMContex
     user = await _ensure_user(message, session)
     if user is None:
         return
-    invited = await invited_count(session, user.id)
+    summary = await partner_summary(session, user.id)
     await message.answer(
-        format_partner(code=user.referral_code, bot_username=get_bot_username(), invited=invited),
-        reply_markup=main_menu(),
+        format_partner(
+            code=user.referral_code,
+            bot_username=get_bot_username(),
+            invited=summary.invited,
+            completed_invitees=summary.completed_invitees,
+            turnover_rub_kop=summary.turnover_rub_kop,
+            earned_sats=summary.earned_sats,
+            available_sats=summary.available_sats,
+            snapshot_rub_kop=summary.snapshot_rub_kop,
+            estimate_rub_kop=summary.estimate_rub_kop,
+        ),
+        reply_markup=await menu_for(session, message.from_user.id),
     )
 
 
 @router.message(F.text == MENU_SUPPORT)
-async def menu_support(message: Message, state: FSMContext) -> None:
+async def menu_support(message: Message, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
-    await message.answer(SUPPORT_TEXT, reply_markup=main_menu())
+    markup = await menu_for(session, None if message.from_user is None else message.from_user.id)
+    await message.answer(SUPPORT_TEXT, reply_markup=markup)
 
 
 @router.message(BuyFlow.confirm)
@@ -159,7 +184,7 @@ async def buy_address(message: Message, session: AsyncSession, state: FSMContext
     principal = data.get("principal_rub_kop")
     if not isinstance(principal, int):
         await state.clear()
-        await message.answer(AMOUNT_PROMPT, reply_markup=main_menu())
+        await message.answer(AMOUNT_PROMPT, reply_markup=await menu_for(session, message.from_user.id if message.from_user else None))
         await state.set_state(BuyFlow.amount)
         return
     try:
@@ -173,10 +198,10 @@ async def buy_address(message: Message, session: AsyncSession, state: FSMContext
 
 
 @router.callback_query(BuyFlow.confirm, F.data == "buy:cancel")
-async def buy_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+async def buy_cancel(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
-    await _reply(callback, CANCELLED_TEXT)
+    await _reply(callback, session, CANCELLED_TEXT)
 
 
 @router.callback_query(BuyFlow.confirm, F.data == "buy:confirm")
@@ -187,7 +212,7 @@ async def buy_confirm(callback: CallbackQuery, session: AsyncSession, state: FSM
     if not isinstance(raw_snapshot, dict) or not isinstance(address, str):
         await state.clear()
         await callback.answer()
-        await _reply(callback, QUOTE_EXPIRED)
+        await _reply(callback, session, QUOTE_EXPIRED)
         return
     snapshot = QuoteSnapshot.from_dict(raw_snapshot)
     if callback.from_user is None:
@@ -214,38 +239,48 @@ async def buy_confirm(callback: CallbackQuery, session: AsyncSession, state: FSM
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, QUOTE_EXPIRED)
+        await _reply(callback, session, QUOTE_EXPIRED)
         return
     except UserBlocked:
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, BLOCKED_TEXT)
+        await _reply(callback, session, BLOCKED_TEXT)
         return
     except InvalidBtcAddress:
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, ADDRESS_RETRY)
+        await _reply(callback, session, ADDRESS_RETRY)
         return
     except (PricingError, ValueError):
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, QUOTE_EXPIRED)
+        await _reply(callback, session, QUOTE_EXPIRED)
         return
     await state.clear()
     await callback.answer()
-    await _reply(callback, format_searching(order.public_no))
+    if callback.message is not None:
+        await callback.message.answer(format_searching(order.public_no), reply_markup=searching_keyboard(order.id))
+    elif callback.from_user is not None:
+        await callback.bot.send_message(
+            callback.from_user.id,
+            format_searching(order.public_no),
+            reply_markup=searching_keyboard(order.id),
+        )
 
 
 @router.message(StateFilter(None))
-async def fallback(message: Message) -> None:
-    await message.answer("Выберите пункт меню.", reply_markup=main_menu())
+async def fallback(message: Message, session: AsyncSession) -> None:
+    telegram_id = None if message.from_user is None else message.from_user.id
+    await message.answer("Выберите пункт меню.", reply_markup=await menu_for(session, telegram_id))
 
 
-async def _reply(callback: CallbackQuery, text: str) -> None:
+async def _reply(callback: CallbackQuery, session: AsyncSession, text: str) -> None:
+    telegram_id = None if callback.from_user is None else callback.from_user.id
+    markup = await menu_for(session, telegram_id)
     if callback.message is not None:
-        await callback.message.answer(text, reply_markup=main_menu())
+        await callback.message.answer(text, reply_markup=markup)
     elif callback.from_user is not None:
-        await callback.bot.send_message(callback.from_user.id, text, reply_markup=main_menu())
+        await callback.bot.send_message(callback.from_user.id, text, reply_markup=markup)

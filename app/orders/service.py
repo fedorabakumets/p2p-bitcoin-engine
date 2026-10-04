@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,9 +109,9 @@ async def open_searching_order(
     snapshot: QuoteSnapshot,
     btc_address: str,
 ) -> Order:
-    """Persist the quote and leave the order waiting for a trader.
+    """Persist the quote and offer it to eligible traders.
 
-    Nobody is assigned here. Claim, escrow, and payout are later stages.
+    The claim itself is accept_order. This step only opens the search window.
     """
 
     order = await persist_created_order(
@@ -128,7 +128,7 @@ async def open_searching_order(
         actor_user_id=user_id,
         idempotency_key=f"order:{order.id}:status:QUOTED",
     )
-    await transition(
+    order = await transition(
         session,
         order,
         OrderStatus.SEARCHING_EXECUTOR,
@@ -137,6 +137,13 @@ async def open_searching_order(
         idempotency_key=f"order:{order.id}:status:SEARCHING_EXECUTOR",
         payload={"reason": "awaiting_trader"},
     )
+    from app.pricing.service import load_pricing_settings
+    from app.routing.service import offer_order
+
+    settings = await load_pricing_settings(session)
+    order.accept_expires_at = utcnow() + timedelta(seconds=settings.accept_ttl_seconds)
+    await session.flush()
+    await offer_order(session, order)
     await session.refresh(order)
     return order
 
@@ -179,6 +186,29 @@ async def list_client_orders(session: AsyncSession, client_id: uuid.UUID, *, lim
         select(Order).where(Order.client_id == client_id).order_by(Order.created_at.desc()).limit(limit)
     )
     return list(rows)
+
+
+def add_order_event(
+    session: AsyncSession,
+    order: Order,
+    *,
+    from_status: OrderStatus | None,
+    to_status: OrderStatus,
+    actor_type: str,
+    actor_user_id: uuid.UUID | None,
+    idempotency_key: str,
+    payload: dict[str, object] | None = None,
+) -> None:
+    _add_event(
+        session,
+        order,
+        from_status=from_status,
+        to_status=to_status,
+        actor_type=actor_type,
+        actor_user_id=actor_user_id,
+        idempotency_key=idempotency_key,
+        payload=payload or {},
+    )
 
 
 def _add_event(

@@ -1,1 +1,1 @@
-"""Trader bot. Claim and payout screens are a later stage."""
+"""Trader panel in the same bot: balance, SBP, claims, and payment buttons."""
