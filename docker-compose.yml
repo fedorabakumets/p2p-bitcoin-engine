@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: p2p
+      POSTGRES_PASSWORD: p2p
+      POSTGRES_DB: p2p
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U p2p -d p2p"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      DATABASE_URL: postgresql+asyncpg://p2p:p2p@postgres:5432/p2p
+      REDIS_URL: redis://redis:6379/0
+      BTC_RUB_RATE: ${BTC_RUB_RATE:-6000000}
+    ports:
+      - "8000:8000"
+    restart: "no"
+
+volumes:
+  postgres_data:
