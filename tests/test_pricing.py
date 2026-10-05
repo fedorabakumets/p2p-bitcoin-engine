@@ -31,10 +31,11 @@ def test_default_quote_for_2000_rub() -> None:
     assert restored == snapshot
     assert format_quote(snapshot) == (
         "<b>Котировка</b>\n"
-        "Получите: 2000 ₽\n"
-        "Наценка: 18%\n"
-        "К оплате: 2360 ₽\n"
-        "Уйдёт: 0.00033333 BTC\n"
+        "\n"
+        "Получите: <code>2000 ₽</code>\n"
+        "Наценка: <b>18%</b>\n"
+        "К оплате: <code>2360 ₽</code>\n"
+        "Уйдёт: <code>0.00033333 BTC</code>\n"
         "Курс действует ещё 2 мин"
     )
 

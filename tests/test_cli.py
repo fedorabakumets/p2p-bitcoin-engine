@@ -42,10 +42,10 @@ def test_dry_run_without_token() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert "Получите: 2000 ₽" in result.stdout
-    assert "Наценка: 18%" in result.stdout
-    assert "К оплате: 2360 ₽" in result.stdout
-    assert "Уйдёт: 0.00033333 BTC" in result.stdout
+    assert "Получите: <code>2000 ₽</code>" in result.stdout
+    assert "Наценка: <b>18%</b>" in result.stdout
+    assert "К оплате: <code>2360 ₽</code>" in result.stdout
+    assert "Уйдёт: <code>0.00033333 BTC</code>" in result.stdout
     assert "Курс действует ещё 2 мин" in result.stdout
     assert "dry-run ok" in result.stdout
     assert "Traceback" not in result.stderr

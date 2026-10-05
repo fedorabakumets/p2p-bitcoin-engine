@@ -249,13 +249,13 @@ async def request_withdrawal(session: AsyncSession, trader_id: uuid.UUID, amount
         before_state={"available_sats": before},
         after_state={"available_sats": before, "requested_sats": amount_sats, "autopayout": False},
     )
-    from app.formatting import format_btc
+    from app.formatting import html_btc, html_card
 
-    text_value = (
-        f"Заявка на вывод\n"
-        f"Трейдер: {user.telegram_id}\n"
-        f"Сумма: {format_btc(amount_sats)} BTC\n"
-        "Автовыплаты нет. Это заявка оператору."
+    text_value = html_card(
+        "Вывод",
+        f"Трейдер: <code>{user.telegram_id}</code>\n"
+        f"Сумма: {html_btc(amount_sats)}\n"
+        "Автовыплаты нет. Это заявка оператору.",
     )
     admins = list(await session.scalars(select(AdminUser.user_id)))
     for admin_id in admins:

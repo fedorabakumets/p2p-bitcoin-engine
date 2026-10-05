@@ -113,6 +113,12 @@ async def run_bot(token: str) -> None:
             print("BOT_TOKEN was rejected by Telegram.", file=sys.stderr)
             raise SystemExit(1) from None
         set_bot_username(me.username)
+        from app.bot.profile import apply_bot_profile
+
+        try:
+            await apply_bot_profile(bot)
+        except Exception as exc:
+            log.error("telegram profile update failed: %s", type(exc).__name__)
         storage = RedisStorage(redis=redis)
         redis = None
         dispatcher = build_dispatcher(storage, sessionmaker, storage.redis)

@@ -51,14 +51,15 @@ def _user_id(event: object) -> int | None:
 
 
 async def _tell_user(event: object) -> None:
-    text = "Слишком много сообщений. Подождите немного."
+    text = "<b>Пауза</b>\n\nСлишком много сообщений. Подождите немного."
+    alert = "Слишком много сообщений. Подождите немного."
     if isinstance(event, Update):
         if event.message is not None:
             await event.message.answer(text)
         elif event.callback_query is not None:
-            await event.callback_query.answer(text, show_alert=True)
+            await event.callback_query.answer(alert, show_alert=True)
         return
     if isinstance(event, Message):
         await event.answer(text)
     elif isinstance(event, CallbackQuery):
-        await event.answer(text, show_alert=True)
+        await event.answer(alert, show_alert=True)

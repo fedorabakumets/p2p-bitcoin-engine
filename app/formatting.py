@@ -28,6 +28,22 @@ def format_btc(sats: int) -> str:
     return f"{sign}{whole}.{frac:08d}"
 
 
+def html_rub(kopecks: int) -> str:
+    return f"<code>{format_rub(kopecks)} ₽</code>"
+
+
+def html_btc(sats: int) -> str:
+    return f"<code>{format_btc(sats)} BTC</code>"
+
+
+def html_card(title: str, body: str = "") -> str:
+    head = f"<b>{esc(title)}</b>"
+    text = body.strip("\n")
+    if not text:
+        return head
+    return f"{head}\n\n{text}"
+
+
 def rub_kop_for_sats(sats: int, rate_rub_per_btc: Decimal) -> int:
     """Convert satoshis to integer kopecks at a rub-per-BTC rate. Half-up."""
 
@@ -53,11 +69,11 @@ STATUS_LABEL: dict[OrderStatus, str] = {
 
 BTN_ACCEPT = "Принять"
 BTN_PAID = "Я оплатил"
-BTN_CANCEL = "Отменить"
+BTN_CANCEL = "Отмена"
 BTN_CONTINUE = "Продолжить"
 BTN_QUOTE_CANCEL = "Отмена"
 BTN_CONFIRM = "Подтвердить"
-BTN_DISPUTE = "Спор"
+BTN_DISPUTE = "Открыть спор"
 
 
 def status_label(status: OrderStatus | str, *, for_trader: bool = False) -> str:

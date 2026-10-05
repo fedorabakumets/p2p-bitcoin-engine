@@ -18,21 +18,20 @@ from app.models import Order, OrderStatus
 
 def main_menu(is_trader: bool = False, *, online: bool = False) -> ReplyKeyboardMarkup:
     rows: list[list[KeyboardButton]] = [
-        [KeyboardButton(text=MENU_BUY)],
-        [KeyboardButton(text=MENU_ORDERS)],
-        [KeyboardButton(text=MENU_PARTNER)],
-        [KeyboardButton(text=MENU_SUPPORT)],
+        [KeyboardButton(text=MENU_BUY), KeyboardButton(text=MENU_ORDERS)],
+        [KeyboardButton(text=MENU_PARTNER), KeyboardButton(text=MENU_SUPPORT)],
     ]
     if is_trader:
         line = MENU_ONLINE if online else MENU_OFFLINE
         rows.extend(
             [
-                [KeyboardButton(text=MENU_BALANCE), KeyboardButton(text=line)],
-                [KeyboardButton(text=MENU_ACTIVE), KeyboardButton(text=MENU_STATS)],
+                [KeyboardButton(text=line)],
+                [KeyboardButton(text=MENU_BALANCE), KeyboardButton(text=MENU_ACTIVE)],
                 [KeyboardButton(text=MENU_SBP), KeyboardButton(text=MENU_WITHDRAW)],
+                [KeyboardButton(text=MENU_STATS)],
             ]
         )
-    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, is_persistent=True)
 
 
 def searching_keyboard(order_id: uuid.UUID) -> InlineKeyboardMarkup:

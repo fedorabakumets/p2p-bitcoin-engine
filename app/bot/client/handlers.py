@@ -22,7 +22,7 @@ from app.bot.client.texts import (
     CANCELLED_TEXT,
     CONFIRM_HINT,
     EMPTY_ORDERS,
-    MAIN_MENU_TEXT,
+    FALLBACK_TEXT,
     MENU_BUY,
     MENU_ORDERS,
     MENU_PARTNER,
@@ -36,12 +36,13 @@ from app.bot.client.texts import (
     format_partner,
     format_quote,
     format_status_card,
+    start_text,
 )
 from app.bot.common.ui import clear_inline, edit_or_send, inline_with_back
 from app.bot.menus import menu_for
 from app.bot.runtime import get_bot_username
 from app.config import bitcoin_network
-from app.models import Order, OrderStatus, TraderPaymentMethod
+from app.models import Order, OrderStatus, Trader, TraderPaymentMethod
 from app.notifications.messages import client_payment_text
 from app.orders.service import InvalidBtcAddress, QuoteExpired, list_client_orders, open_searching_order
 from app.pricing.formula import PricingError, QuoteSnapshot
@@ -108,7 +109,11 @@ async def cmd_start(
     if _blocked(user):
         await message.answer(BLOCKED_TEXT)
         return
-    await message.answer(MAIN_MENU_TEXT, reply_markup=await menu_for(session, message.from_user.id))
+    trader = await session.get(Trader, user.id)
+    await message.answer(
+        start_text(is_trader=trader is not None),
+        reply_markup=await menu_for(session, message.from_user.id),
+    )
 
 
 @router.message(F.text == MENU_BUY)
@@ -320,4 +325,4 @@ async def open_order(callback: CallbackQuery, session: AsyncSession) -> None:
 @router.message(StateFilter(None))
 async def fallback(message: Message, session: AsyncSession) -> None:
     telegram_id = None if message.from_user is None else message.from_user.id
-    await message.answer("Выберите пункт меню.", reply_markup=await menu_for(session, telegram_id))
+    await message.answer(FALLBACK_TEXT, reply_markup=await menu_for(session, telegram_id))

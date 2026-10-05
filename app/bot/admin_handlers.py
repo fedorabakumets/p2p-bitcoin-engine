@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin.service import CreditUsage, NotAdmin, apply_credit_command, apply_resolve_command
 from app.bot.menus import menu_for
 from app.config import bitcoin_network
-from app.formatting import esc, status_label
+from app.formatting import esc, html_card, status_label
 from app.models import OrderStatus
 from app.wallets.errors import PayoutBroadcastError
 
@@ -26,17 +26,20 @@ async def cmd_credit(message: Message, command: CommandObject, session: AsyncSes
         await session.commit()
     except NotAdmin:
         await session.rollback()
-        await message.answer("Команда доступна только администратору.")
+        await message.answer(html_card("Админ", "Команда доступна только администратору."))
         return
     except CreditUsage as exc:
         await session.rollback()
-        await message.answer(str(exc))
+        await message.answer(html_card("Пополнение", esc(str(exc))))
         return
     except LookupError:
         await session.rollback()
-        await message.answer("Пользователь не найден.")
+        await message.answer(html_card("Пополнение", "Пользователь не найден."))
         return
-    await message.answer(text, reply_markup=await menu_for(session, message.from_user.id))
+    await message.answer(
+        html_card("Пополнение", esc(text)),
+        reply_markup=await menu_for(session, message.from_user.id),
+    )
 
 
 @router.message(Command("resolve"))
@@ -53,22 +56,24 @@ async def cmd_resolve(message: Message, command: CommandObject, session: AsyncSe
     except PayoutBroadcastError as exc:
         network = bitcoin_network().strip().lower() or "testnet"
         await message.answer(
-            f"<b>Заявка №{exc.public_no}</b>\n"
-            f"{status_label(OrderStatus.RELEASING)}\n\n"
-            f"Сеть: {esc(network)}.\n"
-            "Заморозка на месте: сатоши не вернулись и второй раз не списываются."
+            html_card(
+                f"Заявка №{exc.public_no}",
+                f"{status_label(OrderStatus.RELEASING)}\n"
+                f"Сеть: {esc(network)}.\n"
+                "Заморозка на месте: сатоши не вернулись и второй раз не списываются.",
+            )
         )
         return
     except NotAdmin:
         await session.rollback()
-        await message.answer("Команда доступна только администратору.")
+        await message.answer(html_card("Админ", "Команда доступна только администратору."))
         return
     except CreditUsage as exc:
         await session.rollback()
-        await message.answer(str(exc))
+        await message.answer(html_card("Спор", esc(str(exc))))
         return
     except LookupError:
         await session.rollback()
-        await message.answer("Заявка не найдена.")
+        await message.answer(html_card("Спор", "Заявка не найдена."))
         return
-    await message.answer(text, reply_markup=await menu_for(session, message.from_user.id))
+    await message.answer(html_card("Спор", esc(text)), reply_markup=await menu_for(session, message.from_user.id))

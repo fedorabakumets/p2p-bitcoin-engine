@@ -1,39 +1,61 @@
-from app.formatting import esc, format_btc, format_rub, status_label
-from app.models import Order, OrderStatus
+from app.formatting import esc, html_btc, html_card, html_rub, status_label
+from app.models import Order
 from app.pricing.formula import QuoteSnapshot
 from app.wallets.btc_address import classify_btc_address
 
-MENU_BUY = "Купить BTC"
-MENU_ORDERS = "Мои заявки"
-MENU_PARTNER = "Партнёрская программа"
-MENU_SUPPORT = "Поддержка"
+MENU_BUY = "💰 Купить BTC"
+MENU_ORDERS = "📋 Мои заявки"
+MENU_PARTNER = "👥 Партнёрам"
+MENU_SUPPORT = "💬 Поддержка"
 MENU_TEXTS = (MENU_BUY, MENU_ORDERS, MENU_PARTNER, MENU_SUPPORT)
 
 ORDERS_PAGE = 5
 
-SUPPORT_TEXT = (
-    "<b>Поддержка</b>\n\n"
-    "Напишите номер заявки из «Мои заявки». Скриншот перевод не подтверждает."
+SUPPORT_TEXT = html_card(
+    "Поддержка",
+    "Напишите номер заявки из «Мои заявки» и коротко, что случилось.\n"
+    "Деньги уходят трейдеру по СБП, бот эти рубли не получает.\n"
+    "Скриншот перевода оплату не подтверждает.",
 )
 
-AMOUNT_PROMPT = "Сумма в рублях. Например, 2000."
-ADDRESS_PROMPT = "Введите BTC-адрес. Подходят адреса, которые начинаются с bc1, 1 или 3."
-ADDRESS_PROMPT_TESTNET = (
-    "Введите BTC-адрес testnet. Подходят адреса, которые начинаются с tb1, m, n или 2."
+AMOUNT_PROMPT = html_card("Сумма", "Сколько рублей меняем. Например, <code>2000</code>.")
+ADDRESS_PROMPT = html_card(
+    "Адрес",
+    "Введите BTC-адрес. Подходят адреса, которые начинаются с bc1, 1 или 3.",
 )
-AMOUNT_RETRY = "Нужна сумма в рублях. Например, 2000."
-ADDRESS_PREFIX_HINT = "Этот адрес не подходит. Нужен Bitcoin-адрес, который начинается с bc1, 1 или 3."
-ADDRESS_PREFIX_HINT_TESTNET = (
-    "Этот адрес не подходит. Нужен testnet-адрес, который начинается с tb1, m, n или 2."
+ADDRESS_PROMPT_TESTNET = html_card(
+    "Адрес",
+    "Введите BTC-адрес testnet. Подходят адреса, которые начинаются с tb1, m, n или 2.",
 )
-ADDRESS_CHECKSUM_HINT = "Адрес неполный или контрольная сумма не совпадает."
-AMOUNT_TOO_SMALL = "Сумма слишком маленькая для текущего курса. Введите больше."
-QUOTE_EXPIRED = "Котировка истекла. Нажмите «Купить BTC» и запросите новую."
-CANCELLED_TEXT = "Отменено."
-MAIN_MENU_TEXT = "<b>Покупка BTC</b>"
-BLOCKED_TEXT = "Аккаунт заблокирован."
-EMPTY_ORDERS = "Заявок пока нет."
-CONFIRM_HINT = "Нажмите «Продолжить» или «Отмена»."
+AMOUNT_RETRY = html_card("Сумма", "Нужны рубли. Например, <code>2000</code>.")
+ADDRESS_PREFIX_HINT = html_card(
+    "Адрес",
+    "Этот адрес не подходит. Нужен Bitcoin-адрес, который начинается с bc1, 1 или 3.",
+)
+ADDRESS_PREFIX_HINT_TESTNET = html_card(
+    "Адрес",
+    "Этот адрес не подходит. Нужен testnet-адрес, который начинается с tb1, m, n или 2.",
+)
+ADDRESS_CHECKSUM_HINT = html_card("Адрес", "Адрес неполный или контрольная сумма не совпадает.")
+AMOUNT_TOO_SMALL = html_card("Сумма", "Для текущего курса это мало. Введите больше.")
+QUOTE_EXPIRED = html_card("Котировка", f"Срок вышел. Нажмите «{MENU_BUY}» и запросите новую.")
+CANCELLED_TEXT = html_card("Отмена", "Ничего не создано.")
+BLOCKED_TEXT = html_card("Доступ закрыт", "Аккаунт заблокирован.")
+EMPTY_ORDERS = html_card("Мои заявки", "Пока пусто.")
+CONFIRM_HINT = html_card("Котировка", "Нажмите «Продолжить» или «Отмена».")
+FALLBACK_TEXT = html_card("Меню", "Выберите кнопку на клавиатуре.")
+
+
+def start_text(*, is_trader: bool) -> str:
+    lines = [
+        "<b>Обмен BTC</b>",
+        "",
+        "Здравствуйте.",
+        "Здесь покупают биткоин за рубли. Деньги уходят трейдеру по СБП, биток приходит на ваш адрес.",
+    ]
+    if is_trader:
+        lines.append("Панель трейдера — на этой же клавиатуре.")
+    return "\n".join(lines)
 
 
 def address_prompt(network: str = "mainnet") -> str:
@@ -64,37 +86,44 @@ def format_quote_ttl(seconds: int) -> str:
 
 
 def format_quote(snapshot: QuoteSnapshot) -> str:
-    return (
-        "<b>Котировка</b>\n"
-        f"Получите: {format_rub(snapshot.principal_rub_kop)} ₽\n"
-        f"Наценка: {format_markup_percent(snapshot.markup_bps)}%\n"
-        f"К оплате: {format_rub(snapshot.payment_rub_kop)} ₽\n"
-        f"Уйдёт: {format_btc(snapshot.client_btc_sats)} BTC\n"
-        f"Курс действует ещё {format_quote_ttl(snapshot.ttl_seconds)}"
+    return html_card(
+        "Котировка",
+        "\n".join(
+            [
+                f"Получите: {html_rub(snapshot.principal_rub_kop)}",
+                f"Наценка: <b>{format_markup_percent(snapshot.markup_bps)}%</b>",
+                f"К оплате: {html_rub(snapshot.payment_rub_kop)}",
+                f"Уйдёт: {html_btc(snapshot.client_btc_sats)}",
+                f"Курс действует ещё {format_quote_ttl(snapshot.ttl_seconds)}",
+            ]
+        ),
     )
 
 
 def format_status_card(order: Order) -> str:
-    return (
-        f"<b>Заявка №{order.public_no}</b>\n"
-        f"{status_label(order.status)}\n\n"
-        f"Получите: {format_rub(order.principal_rub_kop)} ₽\n"
-        f"К оплате: {format_rub(order.payment_rub_kop)} ₽\n"
-        f"Уйдёт: {format_btc(order.client_btc_sats)} BTC\n"
-        f"Адрес: <code>{esc(order.btc_address)}</code>"
+    return html_card(
+        f"Заявка №{order.public_no}",
+        "\n".join(
+            [
+                status_label(order.status),
+                f"Получите: {html_rub(order.principal_rub_kop)}",
+                f"К оплате: {html_rub(order.payment_rub_kop)}",
+                f"Уйдёт: {html_btc(order.client_btc_sats)}",
+                f"Адрес: <code>{esc(order.btc_address)}</code>",
+            ]
+        ),
     )
 
 
 def format_orders(orders: list[Order]) -> str:
     if not orders:
         return EMPTY_ORDERS
-    blocks = ["<b>Мои заявки</b>"]
-    for order in orders:
-        blocks.append(
-            f"№{order.public_no} — {status_label(order.status)}\n"
-            f"{format_rub(order.principal_rub_kop)} ₽ · {format_btc(order.client_btc_sats)} BTC"
-        )
-    return "\n\n".join(blocks)
+    blocks = [
+        f"№{order.public_no} — {status_label(order.status)}\n"
+        f"{html_rub(order.principal_rub_kop)} · {html_btc(order.client_btc_sats)}"
+        for order in orders
+    ]
+    return html_card("Мои заявки", "\n\n".join(blocks))
 
 
 def format_partner(
@@ -113,14 +142,19 @@ def format_partner(
         link = f"t.me/{bot_username}?start=ref_{code}"
     else:
         link = code
-    return (
-        "<b>Партнёрская программа</b>\n\n"
-        f"Приглашено: {invited}\n"
-        f"Активные: {completed_invitees}\n"
-        f"Оборот: {format_rub(turnover_rub_kop)} ₽\n"
-        f"Заработано: {format_btc(earned_sats)} BTC\n"
-        f"Доступно: {format_btc(available_sats)} BTC\n"
-        f"Оценка по курсу заявок: {format_rub(snapshot_rub_kop)} ₽\n"
-        f"Оценка по текущему курсу: ≈ {format_rub(estimate_rub_kop)} ₽\n\n"
-        f"Ссылка: <code>{esc(link)}</code>"
+    return html_card(
+        "Партнёрам",
+        "\n".join(
+            [
+                f"Приглашено: {invited}",
+                f"Активные: {completed_invitees}",
+                f"Оборот: {html_rub(turnover_rub_kop)}",
+                f"Заработано: {html_btc(earned_sats)}",
+                f"Доступно: {html_btc(available_sats)}",
+                f"Оценка по курсу заявок: {html_rub(snapshot_rub_kop)}",
+                f"Оценка по текущему курсу: ≈ {html_rub(estimate_rub_kop)}",
+                "",
+                f"Ссылка: <code>{esc(link)}</code>",
+            ]
+        ),
     )
