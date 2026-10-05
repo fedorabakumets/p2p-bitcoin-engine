@@ -1,55 +1,69 @@
-from app.formatting import format_btc, format_rub
-from app.models import Order, TraderPaymentMethod
+from app.config import bitcoin_network
+from app.formatting import esc, format_btc, format_rub, status_label
+from app.models import Order, OrderStatus, TraderPaymentMethod
+
+
+def _network_name() -> str:
+    network = bitcoin_network().strip().lower()
+    if network == "testnet":
+        return "testnet"
+    if network == "mainnet":
+        return "mainnet"
+    return network or "testnet"
 
 
 def trader_offer_text(order: Order, accept_seconds: int) -> str:
     markup = order.payment_rub_kop - order.principal_rub_kop
     return (
-        f"Новая заявка №{order.public_no}\n"
-        f"Сумма: {format_rub(order.principal_rub_kop)} ₽\n"
+        f"<b>Новая заявка №{order.public_no}</b>\n"
+        f"Получит: {format_rub(order.principal_rub_kop)} ₽\n"
         f"К оплате: {format_rub(order.payment_rub_kop)} ₽\n"
-        f"Способ: СБП\n"
+        "СБП\n"
         f"На карту: {format_rub(markup)} ₽\n"
-        f"У вас {accept_seconds} секунд"
+        f"Осталось {accept_seconds} секунд"
     )
 
 
 def client_payment_text(order: Order, method: TraderPaymentMethod) -> str:
     return (
-        f"Заявка №{order.public_no}\n"
-        f"Переведите {format_rub(order.payment_rub_kop)} ₽ по СБП.\n"
-        f"Телефон: {method.phone}\n"
-        f"Банк: {method.bank_name}\n"
-        f"Получатель: {method.holder_name}\n"
-        "После перевода нажмите «Я оплатил»."
+        f"<b>Заявка №{order.public_no}</b>\n"
+        f"{status_label(OrderStatus.WAITING_PAYMENT)}\n\n"
+        f"К оплате: {format_rub(order.payment_rub_kop)} ₽\n"
+        "Оплата трейдеру по СБП, не платформе.\n"
+        f"Телефон: <code>{esc(method.phone)}</code>\n"
+        f"Банк: {esc(method.bank_name)}\n"
+        f"Получатель: {esc(method.holder_name)}"
     )
 
 
 def trader_paid_text(order: Order) -> str:
     return (
-        f"Клиент отметил оплату по заявке №{order.public_no}.\n"
-        f"К оплате: {format_rub(order.payment_rub_kop)} ₽.\n"
-        "Скриншот сам по себе оплату не подтверждает."
+        f"<b>Заявка №{order.public_no}</b>\n"
+        f"{status_label(OrderStatus.CLIENT_MARKED_PAID, for_trader=True)}\n\n"
+        f"К оплате: {format_rub(order.payment_rub_kop)} ₽\n"
+        "Скриншот оплату не подтверждает."
     )
 
 
 def client_completed_text(order: Order, *, chain_txid: str | None = None) -> str:
+    lines = [
+        f"<b>Заявка №{order.public_no}</b>",
+        status_label(OrderStatus.COMPLETED),
+        "",
+        f"Ушло: {format_btc(order.client_btc_sats)} BTC",
+        f"Адрес: <code>{esc(order.btc_address)}</code>",
+    ]
     if chain_txid:
-        return (
-            f"Заявка №{order.public_no} завершена.\n"
-            f"Выплата {format_btc(order.client_btc_sats)} BTC отправлена в testnet.\n"
-            f"txid: {chain_txid}"
-        )
-    return (
-        f"Заявка №{order.public_no} завершена.\n"
-        f"Выплата {format_btc(order.client_btc_sats)} BTC зафиксирована в учёте.\n"
-        "Отправка в сеть в этой версии не выполняется."
-    )
+        lines.append(f"Сеть: {esc(_network_name())}")
+        lines.append(f"txid: <code>{esc(chain_txid)}</code>")
+    else:
+        lines.append("В сеть не отправляли.")
+    return "\n".join(lines)
 
 
 def client_cancelled_text(order: Order) -> str:
-    return f"Заявка №{order.public_no} отменена."
+    return f"<b>Заявка №{order.public_no}</b>\n{status_label(OrderStatus.CANCELLED)}"
 
 
 def client_expired_text(order: Order) -> str:
-    return f"Заявка №{order.public_no} истекла."
+    return f"<b>Заявка №{order.public_no}</b>\n{status_label(OrderStatus.EXPIRED)}"

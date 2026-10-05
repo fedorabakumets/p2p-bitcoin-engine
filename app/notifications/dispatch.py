@@ -3,6 +3,7 @@
 import uuid
 
 from aiogram import Bot
+from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -34,7 +35,12 @@ async def deliver_pending(bot: Bot, sessionmaker: async_sessionmaker, ids: list[
                     ]
                 )
             try:
-                await bot.send_message(user.telegram_id, str(payload.get("text") or ""), reply_markup=markup)
+                await bot.send_message(
+                    user.telegram_id,
+                    str(payload.get("text") or ""),
+                    reply_markup=markup,
+                    parse_mode=ParseMode.HTML,
+                )
             except TelegramAPIError:
                 note.status = "failed"
             else:

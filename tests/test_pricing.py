@@ -30,10 +30,12 @@ def test_default_quote_for_2000_rub() -> None:
     restored = snapshot.__class__.from_dict(json.loads(json.dumps(snapshot.to_dict())))
     assert restored == snapshot
     assert format_quote(snapshot) == (
-        "Получите BTC: ≈ 2000 ₽\n"
+        "<b>Котировка</b>\n"
+        "Получите: 2000 ₽\n"
         "Наценка: 18%\n"
         "К оплате: 2360 ₽\n"
-        "Курс действует: 2 мин"
+        "Уйдёт: 0.00033333 BTC\n"
+        "Курс действует ещё 2 мин"
     )
 
 

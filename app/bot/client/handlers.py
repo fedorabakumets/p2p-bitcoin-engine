@@ -1,3 +1,5 @@
+import uuid
+
 from aiogram import F, Router
 from aiogram.filters import CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -5,7 +7,12 @@ from aiogram.types import CallbackQuery, Message, User as TelegramUser
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.client.amount import parse_rub_to_kop
-from app.bot.client.keyboards import client_order_keyboard, confirm_keyboard, searching_keyboard
+from app.bot.client.keyboards import (
+    client_order_keyboard,
+    client_orders_keyboard,
+    confirm_keyboard,
+    searching_keyboard,
+)
 from app.bot.client.states import BuyFlow
 from app.bot.client.texts import (
     AMOUNT_PROMPT,
@@ -13,11 +20,14 @@ from app.bot.client.texts import (
     AMOUNT_TOO_SMALL,
     BLOCKED_TEXT,
     CANCELLED_TEXT,
+    CONFIRM_HINT,
+    EMPTY_ORDERS,
     MAIN_MENU_TEXT,
     MENU_BUY,
     MENU_ORDERS,
     MENU_PARTNER,
     MENU_SUPPORT,
+    ORDERS_PAGE,
     QUOTE_EXPIRED,
     SUPPORT_TEXT,
     address_prompt,
@@ -25,12 +35,13 @@ from app.bot.client.texts import (
     format_orders,
     format_partner,
     format_quote,
-    format_searching,
+    format_status_card,
 )
+from app.bot.common.ui import clear_inline, edit_or_send, inline_with_back
 from app.bot.menus import menu_for
 from app.bot.runtime import get_bot_username
 from app.config import bitcoin_network
-from app.models import TraderPaymentMethod
+from app.models import Order, OrderStatus, TraderPaymentMethod
 from app.notifications.messages import client_payment_text
 from app.orders.service import InvalidBtcAddress, QuoteExpired, list_client_orders, open_searching_order
 from app.pricing.formula import PricingError, QuoteSnapshot
@@ -70,6 +81,11 @@ async def _ensure_user(message: Message, session: AsyncSession):
             start_payload=None,
         )
     return user
+
+
+async def _orders_view(session: AsyncSession, user_id: uuid.UUID):
+    orders = await list_client_orders(session, user_id, limit=ORDERS_PAGE)
+    return format_orders(orders), client_orders_keyboard(orders) or clear_inline()
 
 
 @router.message(CommandStart())
@@ -113,19 +129,11 @@ async def menu_orders(message: Message, session: AsyncSession, state: FSMContext
     user = await _ensure_user(message, session)
     if user is None:
         return
-    orders = await list_client_orders(session, user.id)
-    markup = await menu_for(session, message.from_user.id)
-    await message.answer(format_orders(orders), reply_markup=markup)
-    for order in orders:
-        keyboard = client_order_keyboard(order)
-        if keyboard is None:
-            continue
-        details = f"Заявка №{order.public_no}"
-        if order.payment_method_id is not None and str(order.status) == "WAITING_PAYMENT":
-            method = await session.get(TraderPaymentMethod, order.payment_method_id)
-            if method is not None:
-                details = client_payment_text(order, method)
-        await message.answer(details, reply_markup=keyboard)
+    text, keyboard = await _orders_view(session, user.id)
+    if text == EMPTY_ORDERS:
+        await message.answer(text, reply_markup=await menu_for(session, message.from_user.id))
+        return
+    await message.answer(text, reply_markup=keyboard)
 
 
 @router.message(F.text == MENU_PARTNER)
@@ -160,7 +168,7 @@ async def menu_support(message: Message, session: AsyncSession, state: FSMContex
 
 @router.message(BuyFlow.confirm)
 async def buy_confirm_text(message: Message) -> None:
-    await message.answer("Нажмите «Продолжить» или «Отмена».")
+    await message.answer(CONFIRM_HINT)
 
 
 @router.message(BuyFlow.amount)
@@ -186,7 +194,10 @@ async def buy_address(message: Message, session: AsyncSession, state: FSMContext
     principal = data.get("principal_rub_kop")
     if not isinstance(principal, int):
         await state.clear()
-        await message.answer(AMOUNT_PROMPT, reply_markup=await menu_for(session, message.from_user.id if message.from_user else None))
+        await message.answer(
+            AMOUNT_PROMPT,
+            reply_markup=await menu_for(session, message.from_user.id if message.from_user else None),
+        )
         await state.set_state(BuyFlow.amount)
         return
     try:
@@ -200,10 +211,10 @@ async def buy_address(message: Message, session: AsyncSession, state: FSMContext
 
 
 @router.callback_query(BuyFlow.confirm, F.data == "buy:cancel")
-async def buy_cancel(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+async def buy_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
-    await _reply(callback, session, CANCELLED_TEXT)
+    await edit_or_send(callback, CANCELLED_TEXT, clear_inline())
 
 
 @router.callback_query(BuyFlow.confirm, F.data == "buy:confirm")
@@ -214,7 +225,7 @@ async def buy_confirm(callback: CallbackQuery, session: AsyncSession, state: FSM
     if not isinstance(raw_snapshot, dict) or not isinstance(address, str):
         await state.clear()
         await callback.answer()
-        await _reply(callback, session, QUOTE_EXPIRED)
+        await edit_or_send(callback, QUOTE_EXPIRED, clear_inline())
         return
     snapshot = QuoteSnapshot.from_dict(raw_snapshot)
     if callback.from_user is None:
@@ -241,48 +252,72 @@ async def buy_confirm(callback: CallbackQuery, session: AsyncSession, state: FSM
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, session, QUOTE_EXPIRED)
+        await edit_or_send(callback, QUOTE_EXPIRED, clear_inline())
         return
     except UserBlocked:
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, session, BLOCKED_TEXT)
+        await edit_or_send(callback, BLOCKED_TEXT, clear_inline())
         return
     except InvalidBtcAddress:
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, session, address_retry_text(address, bitcoin_network()))
+        await edit_or_send(callback, address_retry_text(address, bitcoin_network()), clear_inline())
         return
     except (PricingError, ValueError):
         await state.clear()
         await session.rollback()
         await callback.answer()
-        await _reply(callback, session, QUOTE_EXPIRED)
+        await edit_or_send(callback, QUOTE_EXPIRED, clear_inline())
         return
     await state.clear()
     await callback.answer()
-    if callback.message is not None:
-        await callback.message.answer(format_searching(order.public_no), reply_markup=searching_keyboard(order.id))
-    elif callback.from_user is not None:
-        await callback.bot.send_message(
-            callback.from_user.id,
-            format_searching(order.public_no),
-            reply_markup=searching_keyboard(order.id),
-        )
+    await edit_or_send(callback, format_status_card(order), searching_keyboard(order.id))
+
+
+@router.callback_query(F.data == "orders:back")
+async def orders_back(callback: CallbackQuery, session: AsyncSession) -> None:
+    if callback.from_user is None:
+        await callback.answer()
+        return
+    user = await get_user_by_telegram_id(session, callback.from_user.id)
+    if user is None:
+        await callback.answer("Сначала нажмите /start", show_alert=True)
+        return
+    text, keyboard = await _orders_view(session, user.id)
+    await callback.answer()
+    await edit_or_send(callback, text, keyboard)
+
+
+@router.callback_query(F.data.startswith("ord:"))
+async def open_order(callback: CallbackQuery, session: AsyncSession) -> None:
+    if callback.from_user is None or callback.data is None:
+        await callback.answer()
+        return
+    user = await get_user_by_telegram_id(session, callback.from_user.id)
+    if user is None:
+        await callback.answer("Сначала нажмите /start", show_alert=True)
+        return
+    try:
+        order_id = uuid.UUID(callback.data.removeprefix("ord:"))
+    except ValueError:
+        await callback.answer("Заявка не найдена.", show_alert=True)
+        return
+    order = await session.get(Order, order_id)
+    if order is None or order.client_id != user.id:
+        await callback.answer("Заявка не найдена.", show_alert=True)
+        return
+    method = None
+    if order.payment_method_id is not None and str(order.status) == OrderStatus.WAITING_PAYMENT.value:
+        method = await session.get(TraderPaymentMethod, order.payment_method_id)
+    text = client_payment_text(order, method) if method is not None else format_status_card(order)
+    await callback.answer()
+    await edit_or_send(callback, text, inline_with_back(client_order_keyboard(order), "orders:back"))
 
 
 @router.message(StateFilter(None))
 async def fallback(message: Message, session: AsyncSession) -> None:
     telegram_id = None if message.from_user is None else message.from_user.id
     await message.answer("Выберите пункт меню.", reply_markup=await menu_for(session, telegram_id))
-
-
-async def _reply(callback: CallbackQuery, session: AsyncSession, text: str) -> None:
-    telegram_id = None if callback.from_user is None else callback.from_user.id
-    markup = await menu_for(session, telegram_id)
-    if callback.message is not None:
-        await callback.message.answer(text, reply_markup=markup)
-    elif callback.from_user is not None:
-        await callback.bot.send_message(callback.from_user.id, text, reply_markup=markup)

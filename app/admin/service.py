@@ -125,13 +125,13 @@ async def apply_credit_command(session: AsyncSession, *, admin_telegram_id: int,
         try:
             target_telegram_id = int(parts[0])
         except ValueError as exc:
-            raise CreditUsage("Формат: /credit <telegram_id> <сатоши> или /credit 0.01") from exc
+            raise CreditUsage("Формат: /credit telegram_id сумма, или /credit 0.01") from exc
         target = await get_user_by_telegram_id(session, target_telegram_id)
         if target is None:
             raise LookupError("user not found")
         sats = parse_amount_token(parts[1])
     else:
-        raise CreditUsage("Формат: /credit <telegram_id> <сатоши> или /credit 0.01")
+        raise CreditUsage("Формат: /credit telegram_id сумма, или /credit 0.01")
     balances = await admin_adjust_deposit(session, admin.id, target.id, sats)
     return (
         f"Зачислено {sats} сатоши.\n"
@@ -148,7 +148,7 @@ async def apply_resolve_command(session: AsyncSession, *, admin_telegram_id: int
         raise NotAdmin()
     parts = args.split()
     if len(parts) != 2 or parts[1] not in {"release", "unlock"}:
-        raise CreditUsage("Формат: /resolve <номер заявки> release|unlock")
+        raise CreditUsage("Формат: /resolve номер release или unlock")
     try:
         public_no = int(parts[0])
     except ValueError as exc:

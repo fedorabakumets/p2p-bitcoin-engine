@@ -2,8 +2,8 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bot.client.keyboards import client_order_keyboard
-from app.bot.menus import menu_for
+from app.bot.client.texts import format_status_card
+from app.bot.common.ui import clear_inline, edit_or_send
 from app.bot.trader.keyboards import order_id_from_callback
 from app.orders.payment import CancelNotAllowed, NotOrderClient, cancel_by_client, mark_client_paid
 from app.orders.service import IllegalOrderTransition
@@ -34,11 +34,7 @@ async def on_paid(callback: CallbackQuery, session: AsyncSession) -> None:
         await callback.answer("Сейчас отметить оплату нельзя.", show_alert=True)
         return
     await callback.answer("Оплата отмечена")
-    if callback.message is not None:
-        await callback.message.answer(
-            f"Заявка №{order.public_no}: оплата отмечена. Отменить её больше нельзя.",
-            reply_markup=await menu_for(session, callback.from_user.id),
-        )
+    await edit_or_send(callback, format_status_card(order), clear_inline())
 
 
 @router.callback_query(F.data.startswith("cancel:"))
@@ -63,8 +59,4 @@ async def on_cancel(callback: CallbackQuery, session: AsyncSession) -> None:
         await callback.answer("Эту заявку отменить нельзя.", show_alert=True)
         return
     await callback.answer("Заявка отменена")
-    if callback.message is not None:
-        await callback.message.answer(
-            f"Заявка №{order.public_no} отменена.",
-            reply_markup=client_order_keyboard(order) or await menu_for(session, callback.from_user.id),
-        )
+    await edit_or_send(callback, format_status_card(order), clear_inline())

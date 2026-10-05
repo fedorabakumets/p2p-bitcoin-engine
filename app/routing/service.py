@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ledger.service import InsufficientBalance, available_for_update
 from app.models import Order, OrderStatus, Trader, TraderPaymentMethod, User, utcnow
+from app.formatting import BTN_ACCEPT, BTN_CANCEL, BTN_PAID
 from app.notifications.messages import client_payment_text, trader_offer_text
 from app.notifications.service import enqueue
 from app.orders.service import add_order_event, transition
@@ -47,7 +48,7 @@ async def offer_order(session: AsyncSession, order: Order) -> list[uuid.UUID]:
             order_id=order.id,
             kind="trader_offer",
             text=trader_offer_text(order, settings.accept_ttl_seconds),
-            buttons=[{"text": "ПРИНЯТЬ", "callback_data": f"accept:{order.id}"}],
+            buttons=[{"text": BTN_ACCEPT, "callback_data": f"accept:{order.id}"}],
         )
         notified.append(trader_id)
     return notified
@@ -167,8 +168,8 @@ async def accept_order(session: AsyncSession, *, order_id: uuid.UUID, trader_use
         kind="client_payment_details",
         text=client_payment_text(order, method),
         buttons=[
-            {"text": "Я оплатил", "callback_data": f"pay:{order.id}"},
-            {"text": "Отменить", "callback_data": f"cancel:{order.id}"},
+            {"text": BTN_PAID, "callback_data": f"pay:{order.id}"},
+            {"text": BTN_CANCEL, "callback_data": f"cancel:{order.id}"},
         ],
     )
     await session.flush()

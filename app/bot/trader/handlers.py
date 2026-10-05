@@ -5,33 +5,47 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.common.ui import clear_inline, edit_or_send, inline_with_back
 from app.bot.menus import menu_for
-from app.bot.trader.keyboards import dispute_skip_keyboard, order_id_from_callback, trader_order_keyboard
+from app.bot.trader.keyboards import (
+    dispute_skip_keyboard,
+    order_id_from_callback,
+    trader_order_keyboard,
+    trader_orders_keyboard,
+)
 from app.bot.trader.states import DisputeFlow, SbpFlow, WithdrawFlow
 from app.bot.trader.texts import (
     MENU_ACTIVE,
+    MENU_ACTIVE_LEGACY,
     MENU_BALANCE,
+    MENU_OFFLINE,
     MENU_ONLINE,
+    MENU_ONLINE_LEGACY,
     MENU_SBP,
+    MENU_SBP_LEGACY,
     MENU_STATS,
     MENU_TIER,
     MENU_WITHDRAW,
+    TRADER_ORDERS_PAGE,
     format_balance,
     format_online,
     format_sbp,
     format_stats,
     format_tier,
     format_trader_order,
+    format_trader_orders,
 )
-from app.config import wallet_backend
+from app.config import bitcoin_network, wallet_backend
+from app.formatting import esc, format_btc, status_label
 from app.disputes.service import EvidenceInput, add_dispute_evidence, open_dispute
+from app.models import Order, OrderStatus
 from app.ledger.service import trader_balances
 from app.orders.payment import ConfirmTooEarly, NotOrderTrader, confirm_receipt
 from app.wallets.deposits import ensure_deposit_address
 from app.wallets.errors import PayoutBroadcastError, WalletError
 from app.wallets.factory import get_wallet_adapter
 from app.orders.service import IllegalOrderTransition
-from app.routing.service import AcceptExpired, NotEligible, OrderAlreadyTaken, accept_order
+from app.routing.service import ALREADY_TAKEN_TEXT, AcceptExpired, NotEligible, OrderAlreadyTaken, accept_order
 from app.traders.service import (
     InvalidPaymentMethod,
     NeedSbp,
@@ -71,14 +85,20 @@ async def menu_balance(message: Message, session: AsyncSession, state: FSMContex
         try:
             deposit_address = await ensure_deposit_address(session, user.id, get_wallet_adapter())
         except WalletError:
-            address_note = "Адрес пополнения testnet сейчас недоступен."
+            network = bitcoin_network().strip().lower()
+            if network == "testnet":
+                address_note = "Адрес пополнения testnet сейчас недоступен."
+            elif network == "mainnet":
+                address_note = "Адрес пополнения mainnet сейчас недоступен."
+            else:
+                address_note = "Адрес пополнения сейчас недоступен."
     text = format_balance(balances, deposit_address)
     if address_note:
         text = f"{text}\n{address_note}"
     await message.answer(text, reply_markup=await menu_for(session, message.from_user.id))
 
 
-@router.message(F.text == MENU_ONLINE)
+@router.message(F.text.in_({MENU_ONLINE, MENU_OFFLINE, MENU_ONLINE_LEGACY}))
 async def menu_online(message: Message, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
     if message.from_user is None:
@@ -96,7 +116,7 @@ async def menu_online(message: Message, session: AsyncSession, state: FSMContext
     await message.answer(format_online(updated.is_online), reply_markup=await menu_for(session, message.from_user.id))
 
 
-@router.message(F.text == MENU_ACTIVE)
+@router.message(F.text.in_({MENU_ACTIVE, MENU_ACTIVE_LEGACY}))
 async def menu_active(message: Message, session: AsyncSession, state: FSMContext) -> None:
     await state.clear()
     if message.from_user is None:
@@ -106,14 +126,12 @@ async def menu_active(message: Message, session: AsyncSession, state: FSMContext
     if user is None or trader is None:
         await message.answer("Раздел доступен трейдеру.")
         return
-    orders = await list_active_orders(session, user.id)
+    orders = (await list_active_orders(session, user.id))[:TRADER_ORDERS_PAGE]
     markup = await menu_for(session, message.from_user.id)
     if not orders:
         await message.answer("Активных заявок нет.", reply_markup=markup)
         return
-    await message.answer("Активные заявки", reply_markup=markup)
-    for order in orders:
-        await message.answer(format_trader_order(order), reply_markup=trader_order_keyboard(order))
+    await message.answer(format_trader_orders(orders), reply_markup=trader_orders_keyboard(orders))
 
 
 @router.message(F.text == MENU_STATS)
@@ -143,7 +161,7 @@ async def menu_tier(message: Message, session: AsyncSession, state: FSMContext) 
     await message.answer(format_tier(trader), reply_markup=await menu_for(session, message.from_user.id))
 
 
-@router.message(F.text == MENU_SBP)
+@router.message(F.text.in_({MENU_SBP, MENU_SBP_LEGACY}))
 async def menu_sbp(message: Message, session: AsyncSession, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -194,7 +212,7 @@ async def sbp_holder(message: Message, session: AsyncSession, state: FSMContext)
         await message.answer(str(exc))
         return
     await state.clear()
-    await message.answer("Реквизиты СБП сохранены.\n" + format_sbp(method), reply_markup=await menu_for(session, user.telegram_id))
+    await message.answer(format_sbp(method), reply_markup=await menu_for(session, user.telegram_id))
 
 
 @router.message(F.text == MENU_WITHDRAW)
@@ -210,8 +228,8 @@ async def menu_withdraw(message: Message, session: AsyncSession, state: FSMConte
     balances = await trader_balances(session, user.id)
     await state.set_state(WithdrawFlow.amount)
     await message.answer(
-        "Введите сумму вывода в BTC, например 0.01.\n"
-        f"Доступно: {format_balance(balances).splitlines()[1]}\n"
+        "Сумма вывода в BTC. Например, 0.01.\n"
+        f"Доступно: {format_btc(balances.available_sats)} BTC\n"
         "Это заявка оператору. Автовыплаты нет."
     )
 
@@ -258,25 +276,31 @@ async def on_accept(callback: CallbackQuery, session: AsyncSession) -> None:
         order_id = order_id_from_callback(callback.data, "accept:")
         order = await accept_order(session, order_id=order_id, trader_user_id=user.id)
         await session.commit()
-    except OrderAlreadyTaken as exc:
+    except OrderAlreadyTaken:
         await session.rollback()
-        await callback.answer(str(exc), show_alert=True)
+        await callback.answer(ALREADY_TAKEN_TEXT, show_alert=True)
+        await edit_or_send(callback, ALREADY_TAKEN_TEXT, clear_inline())
         return
     except AcceptExpired as exc:
         await session.rollback()
-        await callback.answer(str(exc), show_alert=True)
+        line = str(exc).splitlines()[0]
+        await callback.answer(line, show_alert=True)
+        await edit_or_send(callback, line, clear_inline())
         return
     except NotEligible as exc:
         await session.rollback()
-        await callback.answer(str(exc), show_alert=True)
+        await callback.answer(str(exc).splitlines()[0], show_alert=True)
         return
     except (LookupError, ValueError):
         await session.rollback()
         await callback.answer("Заявка не найдена.", show_alert=True)
         return
     await callback.answer("Заявка принята")
-    if callback.message is not None:
-        await callback.message.answer(f"Заявка №{order.public_no} ваша. Ждём оплату клиента.")
+    await edit_or_send(
+        callback,
+        f"<b>Заявка №{order.public_no}</b>\n{status_label(OrderStatus.WAITING_PAYMENT)}",
+        clear_inline(),
+    )
 
 
 @router.callback_query(F.data.startswith("confirm:"))
@@ -293,29 +317,50 @@ async def on_confirm(callback: CallbackQuery, session: AsyncSession) -> None:
         order = await confirm_receipt(session, order_id=order_id, trader_id=user.id)
         await session.commit()
     except PayoutBroadcastError as exc:
-        await callback.answer("Выплата не отправлена", show_alert=True)
-        if callback.message is not None:
-            await callback.message.answer(str(exc))
+        network = bitcoin_network().strip().lower() or "testnet"
+        await callback.answer("Выплата не ушла.", show_alert=True)
+        await edit_or_send(
+            callback,
+            (
+                f"<b>Заявка №{exc.public_no}</b>\n"
+                f"{status_label(OrderStatus.RELEASING)}\n\n"
+                f"Сеть: {esc(network)}.\n"
+                "Заморозка на месте: сатоши не вернулись и второй раз не списываются."
+            ),
+            clear_inline(),
+        )
         return
     except ConfirmTooEarly as exc:
         await session.rollback()
-        await callback.answer(str(exc), show_alert=True)
+        await callback.answer(str(exc).splitlines()[0], show_alert=True)
         return
-    except (NotOrderTrader, IllegalOrderTransition) as exc:
+    except NotOrderTrader as exc:
         await session.rollback()
-        await callback.answer(str(exc), show_alert=True)
+        await callback.answer(str(exc).splitlines()[0], show_alert=True)
+        return
+    except IllegalOrderTransition:
+        await session.rollback()
+        await callback.answer("Сейчас это действие недоступно.", show_alert=True)
         return
     except (LookupError, ValueError):
         await session.rollback()
         await callback.answer("Заявка не найдена.", show_alert=True)
         return
     await callback.answer("Оплата подтверждена")
-    if callback.message is not None:
-        if order.payout_wallet_tx_id is None:
-            done = f"Заявка №{order.public_no} завершена. Отправка в сеть в этой версии не выполняется."
-        else:
-            done = f"Заявка №{order.public_no} завершена. Выплата отправлена в testnet."
-        await callback.message.answer(done)
+    if order.payout_wallet_tx_id is None:
+        done = (
+            f"<b>Заявка №{order.public_no}</b>\n"
+            f"{status_label(OrderStatus.COMPLETED)}\n\n"
+            "В сеть не отправляли."
+        )
+    else:
+        network = bitcoin_network().strip().lower() or "testnet"
+        done = (
+            f"<b>Заявка №{order.public_no}</b>\n"
+            f"{status_label(OrderStatus.COMPLETED)}\n\n"
+            f"Сеть: {esc(network)}"
+        )
+    await edit_or_send(callback, done, clear_inline())
 
 
 @router.callback_query(F.data.startswith("dispute:"))
@@ -326,8 +371,7 @@ async def on_dispute(callback: CallbackQuery, session: AsyncSession, state: FSMC
     if callback.data == "dispute:skip":
         await state.clear()
         await callback.answer()
-        if callback.message is not None:
-            await callback.message.answer("Спор открыт. Эскроу остаётся замороженным.")
+        await edit_or_send(callback, "Спор открыт. Эскроу заморожен.", clear_inline())
         return
     user = await _known_user(session, callback.from_user.id)
     if user is None:
@@ -337,9 +381,13 @@ async def on_dispute(callback: CallbackQuery, session: AsyncSession, state: FSMC
         order_id = order_id_from_callback(callback.data, "dispute:")
         await open_dispute(session, order_id=order_id, trader_user_id=user.id, reason="спор")
         await session.commit()
-    except (NotOrderTrader, IllegalOrderTransition) as exc:
+    except NotOrderTrader as exc:
         await session.rollback()
-        await callback.answer(str(exc), show_alert=True)
+        await callback.answer(str(exc).splitlines()[0], show_alert=True)
+        return
+    except IllegalOrderTransition:
+        await session.rollback()
+        await callback.answer("Сейчас это действие недоступно.", show_alert=True)
         return
     except (LookupError, ValueError):
         await session.rollback()
@@ -348,13 +396,62 @@ async def on_dispute(callback: CallbackQuery, session: AsyncSession, state: FSMC
     await state.set_state(DisputeFlow.evidence)
     await state.update_data(order_id=str(order_id))
     await callback.answer("Спор открыт")
-    if callback.message is not None:
-        await callback.message.answer(
-            "Спор открыт. Эскроу остаётся замороженным. "
-            "Пришлите текст или скриншот, либо нажмите «Без вложения». "
-            "Скриншот не подтверждает оплату.",
-            reply_markup=dispute_skip_keyboard(),
-        )
+    await edit_or_send(
+        callback,
+        "Спор открыт. Эскроу заморожен.\n"
+        "Пришлите текст или скриншот, либо нажмите «Без вложения».\n"
+        "Скриншот оплату не подтверждает.",
+        dispute_skip_keyboard(),
+    )
+
+
+async def _trader_orders_view(session: AsyncSession, user_id: uuid.UUID):
+    orders = (await list_active_orders(session, user_id))[:TRADER_ORDERS_PAGE]
+    if not orders:
+        return "Активных заявок нет.", clear_inline()
+    return format_trader_orders(orders), trader_orders_keyboard(orders) or clear_inline()
+
+
+@router.callback_query(F.data == "torders:back")
+async def trader_orders_back(callback: CallbackQuery, session: AsyncSession) -> None:
+    if callback.from_user is None:
+        await callback.answer()
+        return
+    user = await _known_user(session, callback.from_user.id)
+    trader = None if user is None else await get_trader(session, user.id)
+    if user is None or trader is None:
+        await callback.answer("Раздел доступен трейдеру.", show_alert=True)
+        return
+    text, keyboard = await _trader_orders_view(session, user.id)
+    await callback.answer()
+    await edit_or_send(callback, text, keyboard)
+
+
+@router.callback_query(F.data.startswith("tord:"))
+async def open_trader_order(callback: CallbackQuery, session: AsyncSession) -> None:
+    if callback.from_user is None or callback.data is None:
+        await callback.answer()
+        return
+    user = await _known_user(session, callback.from_user.id)
+    trader = None if user is None else await get_trader(session, user.id)
+    if user is None or trader is None:
+        await callback.answer("Раздел доступен трейдеру.", show_alert=True)
+        return
+    try:
+        order_id = order_id_from_callback(callback.data, "tord:")
+    except ValueError:
+        await callback.answer("Заявка не найдена.", show_alert=True)
+        return
+    order = await session.get(Order, order_id)
+    if order is None or order.trader_id != user.id:
+        await callback.answer("Заявка не найдена.", show_alert=True)
+        return
+    await callback.answer()
+    await edit_or_send(
+        callback,
+        format_trader_order(order),
+        inline_with_back(trader_order_keyboard(order), "torders:back"),
+    )
 
 
 @router.message(DisputeFlow.evidence, F.photo)

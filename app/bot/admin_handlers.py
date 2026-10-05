@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.service import CreditUsage, NotAdmin, apply_credit_command, apply_resolve_command
 from app.bot.menus import menu_for
+from app.config import bitcoin_network
+from app.formatting import esc, status_label
+from app.models import OrderStatus
 from app.wallets.errors import PayoutBroadcastError
 
 router = Router(name="admin")
@@ -48,7 +51,13 @@ async def cmd_resolve(message: Message, command: CommandObject, session: AsyncSe
         )
         await session.commit()
     except PayoutBroadcastError as exc:
-        await message.answer(str(exc))
+        network = bitcoin_network().strip().lower() or "testnet"
+        await message.answer(
+            f"<b>Заявка №{exc.public_no}</b>\n"
+            f"{status_label(OrderStatus.RELEASING)}\n\n"
+            f"Сеть: {esc(network)}.\n"
+            "Заморозка на месте: сатоши не вернулись и второй раз не списываются."
+        )
         return
     except NotAdmin:
         await session.rollback()

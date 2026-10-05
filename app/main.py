@@ -57,6 +57,8 @@ def dry_run() -> int:
 async def run_bot(token: str) -> None:
     import uvicorn
     from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
     from aiogram.exceptions import TelegramUnauthorizedError
     from aiogram.fsm.storage.redis import RedisStorage
     from aiogram.utils.token import TokenValidationError
@@ -79,7 +81,7 @@ async def run_bot(token: str) -> None:
     maintenance_task: asyncio.Task[None] | None = None
     try:
         try:
-            bot = Bot(token=token)
+            bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         except TokenValidationError:
             print("BOT_TOKEN is set but is not a valid Telegram bot token.", file=sys.stderr)
             raise SystemExit(1) from None

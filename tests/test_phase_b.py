@@ -223,12 +223,12 @@ async def test_ineligible_traders_are_not_offered(session: AsyncSession) -> None
     assert notes[0].user_id == good.id
     text_value = notes[0].payload["text"]
     assert "Новая заявка" in text_value
-    assert "Сумма: 2000 ₽" in text_value
+    assert "Получит: 2000 ₽" in text_value
     assert "К оплате: 2360 ₽" in text_value
-    assert "Способ: СБП" in text_value
+    assert "СБП" in text_value
     assert "На карту: 360 ₽" in text_value
     assert "20 секунд" in text_value
-    assert notes[0].payload["buttons"][0]["text"] == "ПРИНЯТЬ"
+    assert notes[0].payload["buttons"][0]["text"] == "Принять"
     assert "118" not in text_value
 
 

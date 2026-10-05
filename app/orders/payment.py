@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.escrow.service import get_escrow, release_escrow, unlock_escrow
+from app.formatting import BTN_CONFIRM, BTN_DISPUTE
 from app.models import Order, OrderStatus, utcnow
 from app.notifications.messages import client_cancelled_text, client_completed_text, trader_paid_text
 from app.notifications.service import enqueue
@@ -71,8 +72,8 @@ async def mark_client_paid(session: AsyncSession, *, order_id: uuid.UUID, client
             kind="trader_client_paid",
             text=trader_paid_text(order),
             buttons=[
-                {"text": "Подтвердить получение", "callback_data": f"confirm:{order.id}"},
-                {"text": "Открыть спор", "callback_data": f"dispute:{order.id}"},
+                {"text": BTN_CONFIRM, "callback_data": f"confirm:{order.id}"},
+                {"text": BTN_DISPUTE, "callback_data": f"dispute:{order.id}"},
             ],
         )
     await session.refresh(order)

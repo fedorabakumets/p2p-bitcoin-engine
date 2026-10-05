@@ -14,4 +14,6 @@ async def menu_for(session: AsyncSession, telegram_id: int | None) -> ReplyKeybo
     if user is None:
         return main_menu(False)
     trader = await session.get(Trader, user.id)
-    return main_menu(trader is not None)
+    if trader is None:
+        return main_menu(False)
+    return main_menu(True, online=bool(trader.is_online))
