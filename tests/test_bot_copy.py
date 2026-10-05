@@ -152,7 +152,7 @@ def test_start_greeting_and_support() -> None:
 
     greeting = start_text(is_trader=False)
     assert greeting == (
-        "<b>Обмен BTC</b>\n"
+        "<b>Кедр</b>\n"
         "\n"
         "Здравствуйте.\n"
         "Здесь покупают биткоин за рубли. Деньги уходят трейдеру по СБП, биток приходит на ваш адрес."
@@ -164,8 +164,9 @@ def test_start_greeting_and_support() -> None:
     assert 3 <= len(sentences) <= 4
     assert "позже" not in SUPPORT_TEXT.lower()
     assert SUPPORT_TEXT.startswith("<b>Поддержка</b>")
-    assert BOT_NAME == "Обмен BTC"
-    assert BOT_SHORT_DESCRIPTION == "Биткоин за рубли. Оплата трейдеру по СБП."
+    assert BOT_NAME == "Кедр"
+    assert BOT_SHORT_DESCRIPTION == "Кедр. Биткоин за рубли. Оплата трейдеру по СБП."
+    assert BOT_NAME in BOT_DESCRIPTION
     description_lines = [line for line in BOT_DESCRIPTION.splitlines() if line.strip()]
     assert 3 <= len(description_lines) <= 4
     assert "СБП" in BOT_DESCRIPTION

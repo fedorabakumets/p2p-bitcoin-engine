@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, User as TelegramUser
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot.brand import send_brand_greeting
 from app.bot.client.amount import parse_rub_to_kop
 from app.bot.client.keyboards import (
     client_order_keyboard,
@@ -110,7 +111,10 @@ async def cmd_start(
         await message.answer(BLOCKED_TEXT)
         return
     trader = await session.get(Trader, user.id)
-    await message.answer(
+    await send_brand_greeting(
+        message.bot,
+        session,
+        message.chat.id,
         start_text(is_trader=trader is not None),
         reply_markup=await menu_for(session, message.from_user.id),
     )

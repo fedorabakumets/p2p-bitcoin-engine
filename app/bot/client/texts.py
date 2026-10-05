@@ -1,3 +1,4 @@
+from app.bot.profile import BOT_NAME
 from app.formatting import esc, html_btc, html_card, html_rub, status_label
 from app.models import Order
 from app.pricing.formula import QuoteSnapshot
@@ -48,7 +49,7 @@ FALLBACK_TEXT = html_card("Меню", "Выберите кнопку на кла
 
 def start_text(*, is_trader: bool) -> str:
     lines = [
-        "<b>Обмен BTC</b>",
+        f"<b>{BOT_NAME}</b>",
         "",
         "Здравствуйте.",
         "Здесь покупают биткоин за рубли. Деньги уходят трейдеру по СБП, биток приходит на ваш адрес.",
