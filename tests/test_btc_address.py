@@ -68,12 +68,16 @@ def test_testnet_addresses_are_accepted_only_on_testnet() -> None:
     assert classify_btc_address("m", "testnet") == "checksum"
     assert classify_btc_address("n", "testnet") == "checksum"
     assert classify_btc_address("2", "testnet") == "checksum"
-    assert "Введите BTC-адрес testnet" in address_prompt("testnet")
+    testnet_prompt = address_prompt("testnet")
+    assert "Введите BTC-адрес testnet" in testnet_prompt
+    assert "Пример:\n<code>tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx</code>" in testnet_prompt
     assert "tb1" in address_retry_text("hello", "testnet")
     assert address_retry_text("hello", "testnet") == ADDRESS_PREFIX_HINT_TESTNET
     assert address_retry_text(TB1_WRONG_CHECKSUM, "testnet") == ADDRESS_CHECKSUM_HINT
-    assert address_prompt("mainnet") == address_prompt()
-    assert "bc1" in address_prompt()
+    mainnet_prompt = address_prompt()
+    assert address_prompt("mainnet") == mainnet_prompt
+    assert "Введите BTC-адрес." in mainnet_prompt
+    assert "Пример:\n<code>bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq</code>" in mainnet_prompt
 
 
 def test_rejects_junk() -> None:

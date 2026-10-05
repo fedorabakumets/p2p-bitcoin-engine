@@ -22,11 +22,15 @@ SUPPORT_TEXT = html_card(
 AMOUNT_PROMPT = html_card("Сумма", "Сколько рублей меняем. Например, <code>2000</code>.")
 ADDRESS_PROMPT = html_card(
     "Адрес",
-    "Введите BTC-адрес. Подходят адреса, которые начинаются с bc1, 1 или 3.",
+    "Введите BTC-адрес. Подходят адреса, которые начинаются с bc1, 1 или 3.\n"
+    "Пример:\n"
+    "<code>bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq</code>",
 )
 ADDRESS_PROMPT_TESTNET = html_card(
     "Адрес",
-    "Введите BTC-адрес testnet. Подходят адреса, которые начинаются с tb1, m, n или 2.",
+    "Введите BTC-адрес testnet. Подходят адреса, которые начинаются с tb1, m, n или 2.\n"
+    "Пример:\n"
+    "<code>tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx</code>",
 )
 AMOUNT_RETRY = html_card("Сумма", "Нужны рубли. Например, <code>2000</code>.")
 ADDRESS_PREFIX_HINT = html_card(
