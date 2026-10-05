@@ -32,7 +32,7 @@ from app.pricing.formula import build_quote
 from app.pricing.rates import EnvRateSource
 from app.pricing.service import PricingService
 from app.referrals.service import partner_summary
-from app.routing.service import OrderAlreadyTaken, accept_order, eligible_traders
+from app.routing.service import NotEligible, OrderAlreadyTaken, accept_order, eligible_traders
 from app.traders.service import list_active_orders, request_withdrawal
 from app.users.service import register_from_start
 
@@ -230,6 +230,20 @@ async def test_ineligible_traders_are_not_offered(session: AsyncSession) -> None
     assert "20 секунд" in text_value
     assert notes[0].payload["buttons"][0]["text"] == "Принять"
     assert "118" not in text_value
+
+
+async def test_buyer_is_not_eligible_for_own_order(session: AsyncSession) -> None:
+    admin = await _admin(session, 927)
+    buyer = await _trader(session, admin, 928)
+    other = await _trader(session, admin, 929)
+    order = await _order(session, buyer)
+    offered = await eligible_traders(session, order)
+    assert [trader_id for trader_id, _method in offered] == [other.id]
+    notes = list(await session.scalars(select(Notification).where(Notification.kind == "trader_offer")))
+    assert [note.user_id for note in notes] == [other.id]
+    with pytest.raises(NotEligible):
+        await accept_order(session, order_id=order.id, trader_user_id=buyer.id)
+    assert OrderStatus(str(order.status)) == OrderStatus.SEARCHING_EXECUTOR
 
 
 async def test_double_accept_does_not_lock_twice(session: AsyncSession) -> None:

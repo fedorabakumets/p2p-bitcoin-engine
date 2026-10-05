@@ -76,6 +76,7 @@ async def eligible_traders(session: AsyncSession, order: Order) -> list[tuple[uu
                 WHERE t.status = 'active'
                   AND u.status = 'active'
                   AND t.is_online
+                  AND t.user_id <> :client_id
                   AND COALESCE(b.balance_sats, 0) >= :lock_sats
                   AND :principal >= t.min_order_rub_kop
                   AND :principal <= t.max_order_rub_kop
@@ -86,6 +87,7 @@ async def eligible_traders(session: AsyncSession, order: Order) -> list[tuple[uu
                 "day": utc_today(),
                 "lock_sats": order.trader_lock_sats,
                 "principal": order.principal_rub_kop,
+                "client_id": order.client_id,
             },
         )
     ).all()
@@ -184,6 +186,8 @@ async def _require_eligible(
     method: TraderPaymentMethod | None,
     order: Order,
 ) -> None:
+    if trader.user_id == order.client_id:
+        raise NotEligible()
     if str(trader.status) != "active" or str(user.status) != "active" or not trader.is_online:
         raise NotEligible()
     if method is None:
